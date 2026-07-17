@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Temporary RideVibe brand mark: white bus on the brand indigo tile with
+     amber "vibe" motion lines. Replace with final brand assets before launch. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Indigo rounded tile -->
+    <path
+        android:fillColor="#6366F1"
+        android:pathData="M30,4 h48 a26,26 0 0 1 26,26 v48 a26,26 0 0 1 -26,26 h-48 a26,26 0 0 1 -26,-26 v-48 a26,26 0 0 1 26,-26 z" />
+    <!-- Amber vibe/motion lines trailing the bus -->
+    <path
+        android:fillColor="#F9A825"
+        android:pathData="M20,44 h12 a2.5,2.5 0 0 1 0,5 h-12 a2.5,2.5 0 0 1 0,-5 z M16,56 h16 a2.5,2.5 0 0 1 0,5 h-16 a2.5,2.5 0 0 1 0,-5 z M20,68 h12 a2.5,2.5 0 0 1 0,5 h-12 a2.5,2.5 0 0 1 0,-5 z" />
+    <!-- White bus body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,32 C44,28.5 47,26 51,26 L81,26 C85,26 88,28.5 88,32 L88,72 C88,74.8 86,77 83.5,77 L81,77 C81,80.9 77.9,84 74,84 C70.1,84 67,80.9 67,77 L65,77 C65,80.9 61.9,84 58,84 C54.1,84 51,80.9 51,77 L48.5,77 C46,77 44,74.8 44,72 Z" />
+    <!-- Windshield split into two panes (indigo cutouts) -->
+    <path
+        android:fillColor="#6366F1"
+        android:pathData="M49,33 h14 v18 h-14 z M69,33 h14 v18 h-14 z" />
+    <!-- Headlights -->
+    <path
+        android:fillColor="#6366F1"
+        android:pathData="M52,62 m-3.5,0 a3.5,3.5 0 1 0 7,0 a3.5,3.5 0 1 0 -7,0 M80,62 m-3.5,0 a3.5,3.5 0 1 0 7,0 a3.5,3.5 0 1 0 -7,0" />
+</vector>
