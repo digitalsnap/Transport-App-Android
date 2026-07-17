@@ -4,13 +4,11 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- RideVibe mark: white bus glyph on ink-black rounded tile (per design page 1) -->
     <path
-        android:fillColor="#00696B"
+        android:fillColor="#111827"
         android:pathData="M0,0h108v108h-108z" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M24,44 L84,44 L84,54 L24,54 Z M24,64 L84,64 L84,74 L24,74 Z" />
-    <path
-        android:fillColor="#F9A825"
-        android:pathData="M34,30 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0" />
+        android:pathData="M28,34 C28,30 31,28 35,28 L73,28 C77,28 80,30 80,34 L80,66 C80,69 78,71 75,71 L72,71 C72,75 69,78 65,78 C61,78 58,75 58,71 L50,71 C50,75 47,78 43,78 C39,78 36,75 36,71 L33,71 C30,71 28,69 28,66 Z M34,36 L34,52 L50,52 L50,36 Z M58,36 L58,52 L74,52 L74,36 Z" />
 </vector>

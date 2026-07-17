@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">RideVibe</string>
+
+    <!-- Facebook Login configuration.
+         Register the app at https://developers.facebook.com, then replace the
+         three values below with your real App ID and Client Token.
+         "0" is a sentinel meaning "not configured" — the Facebook button
+         explains this instead of attempting to authenticate. -->
+    <string name="facebook_app_id" translatable="false">0</string>
+    <string name="facebook_client_token" translatable="false">0</string>
+    <string name="fb_login_protocol_scheme" translatable="false">fb0</string>
 </resources>

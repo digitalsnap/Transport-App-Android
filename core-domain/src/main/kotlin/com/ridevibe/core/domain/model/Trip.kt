@@ -10,6 +10,7 @@ data class Trip(
     val busClass: BusClass,
     val farePhp: Double,
     val availableSeatCount: Int,
+    val operatorRating: Double? = null,
 )
 
 enum class BusClass {
