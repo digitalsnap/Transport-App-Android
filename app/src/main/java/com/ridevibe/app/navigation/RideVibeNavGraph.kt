@@ -1,13 +1,21 @@
 package com.ridevibe.app.navigation
 
 import android.net.Uri
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.ridevibe.app.ui.bookings.BookingsScreen
+import com.ridevibe.app.ui.components.BottomTab
+import com.ridevibe.app.ui.components.RideVibeBottomNav
 import com.ridevibe.app.ui.profile.ProfileScreen
 import com.ridevibe.app.ui.welcome.WelcomeScreen
 import com.ridevibe.core.domain.model.BusClass
@@ -50,7 +58,51 @@ private object Routes {
 
 @Composable
 fun RideVibeNavGraph(navController: NavHostController) {
-    NavHost(navController = navController, startDestination = Routes.WELCOME) {
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+
+    // One shared bottom nav for every screen past welcome, so tab switching
+    // is always available. Flow screens (results → ticket) highlight no tab.
+    val selectedTab = when (currentRoute) {
+        Routes.HOME -> BottomTab.HOME
+        Routes.BOOKINGS -> BottomTab.BOOKINGS
+        Routes.PROFILE -> BottomTab.PROFILE
+        else -> null
+    }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        bottomBar = {
+            if (currentRoute != Routes.WELCOME) {
+                RideVibeBottomNav(
+                    selectedTab = selectedTab,
+                    onHomeClick = {
+                        navController.navigate(Routes.HOME) {
+                            popUpTo(Routes.HOME) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    },
+                    onBookingsClick = {
+                        navController.navigate(Routes.BOOKINGS) {
+                            popUpTo(Routes.HOME)
+                            launchSingleTop = true
+                        }
+                    },
+                    onProfileClick = {
+                        navController.navigate(Routes.PROFILE) {
+                            popUpTo(Routes.HOME)
+                            launchSingleTop = true
+                        }
+                    },
+                )
+            }
+        },
+    ) { padding ->
+        NavHost(
+            navController = navController,
+            startDestination = Routes.WELCOME,
+            modifier = Modifier.padding(padding),
+        ) {
 
         composable(Routes.WELCOME) {
             WelcomeScreen(
@@ -69,8 +121,6 @@ fun RideVibeNavGraph(navController: NavHostController) {
                         Routes.results(origin, destination, dateMillis, busClass, adults, children, infants, forSelf),
                     )
                 },
-                onProfileClick = { navController.navigate(Routes.PROFILE) },
-                onBookingsClick = { navController.navigate(Routes.BOOKINGS) },
             )
         }
 
@@ -159,6 +209,7 @@ fun RideVibeNavGraph(navController: NavHostController) {
                     navController.popBackStack(Routes.HOME, inclusive = false)
                 },
             )
+        }
         }
     }
 }

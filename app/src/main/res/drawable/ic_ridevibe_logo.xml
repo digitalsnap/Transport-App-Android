@@ -1,29 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Temporary RideVibe brand mark: white bus on the brand indigo tile with
-     amber "vibe" motion lines. Replace with final brand assets before launch. -->
+<!-- RideVibe brand mark, "Tiffany edition" identity kit: white bus face on a
+     Tiffany-teal gradient tile with motion lines, glass windows, gold marker. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Indigo rounded tile -->
-    <path
-        android:fillColor="#6366F1"
-        android:pathData="M30,4 h48 a26,26 0 0 1 26,26 v48 a26,26 0 0 1 -26,26 h-48 a26,26 0 0 1 -26,-26 v-48 a26,26 0 0 1 26,-26 z" />
-    <!-- Amber vibe/motion lines trailing the bus -->
-    <path
-        android:fillColor="#F9A825"
-        android:pathData="M20,44 h12 a2.5,2.5 0 0 1 0,5 h-12 a2.5,2.5 0 0 1 0,-5 z M16,56 h16 a2.5,2.5 0 0 1 0,5 h-16 a2.5,2.5 0 0 1 0,-5 z M20,68 h12 a2.5,2.5 0 0 1 0,5 h-12 a2.5,2.5 0 0 1 0,-5 z" />
-    <!-- White bus body -->
+
+    <!-- Gradient tile -->
+    <path android:pathData="M24.9,0 H83.1 A24.9,24.9 0 0 1 108,24.9 V83.1 A24.9,24.9 0 0 1 83.1,108 H24.9 A24.9,24.9 0 0 1 0,83.1 V24.9 A24.9,24.9 0 0 1 24.9,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108"
+                android:startColor="#3AD9D3"
+                android:centerColor="#0ABAB5"
+                android:endColor="#0A8F8A" />
+        </aapt:attr>
+    </path>
+
+    <!-- Motion lines -->
+    <path android:fillColor="#4DFFFFFF" android:pathData="M9.8,41.3 h13.8 a1.35,1.35 0 0 1 0,2.7 h-13.8 a1.35,1.35 0 0 1 0,-2.7 z" />
+    <path android:fillColor="#73FFFFFF" android:pathData="M7.3,50.6 h17.6 a1.35,1.35 0 0 1 0,2.7 h-17.6 a1.35,1.35 0 0 1 0,-2.7 z" />
+    <path android:fillColor="#4DFFFFFF" android:pathData="M11.1,59.9 h11.2 a1.35,1.35 0 0 1 0,2.7 h-11.2 a1.35,1.35 0 0 1 0,-2.7 z" />
+
+    <!-- Bus body -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M44,32 C44,28.5 47,26 51,26 L81,26 C85,26 88,28.5 88,32 L88,72 C88,74.8 86,77 83.5,77 L81,77 C81,80.9 77.9,84 74,84 C70.1,84 67,80.9 67,77 L65,77 C65,80.9 61.9,84 58,84 C54.1,84 51,80.9 51,77 L48.5,77 C46,77 44,74.8 44,72 Z" />
-    <!-- Windshield split into two panes (indigo cutouts) -->
-    <path
-        android:fillColor="#6366F1"
-        android:pathData="M49,33 h14 v18 h-14 z M69,33 h14 v18 h-14 z" />
-    <!-- Headlights -->
-    <path
-        android:fillColor="#6366F1"
-        android:pathData="M52,62 m-3.5,0 a3.5,3.5 0 1 0 7,0 a3.5,3.5 0 1 0 -7,0 M80,62 m-3.5,0 a3.5,3.5 0 1 0 7,0 a3.5,3.5 0 1 0 -7,0" />
+        android:pathData="M33.3,31.6 h48.1 a8,8 0 0 1 8,8 v21.1 a8,8 0 0 1 -8,8 h-48.1 a8,8 0 0 1 -8,-8 v-21.1 a8,8 0 0 1 8,-8 z" />
+
+    <!-- Roof marker -->
+    <path android:fillColor="#0ABAB5" android:pathData="M73.9,33.3 h7.2 a1.25,1.25 0 0 1 0,2.5 h-7.2 a1.25,1.25 0 0 1 0,-2.5 z" />
+
+    <!-- Glass windows -->
+    <path android:fillColor="#5FD3CD" android:pathData="M32.5,37.6 h7.2 a2.5,2.5 0 0 1 2.5,2.5 v6.8 a2.5,2.5 0 0 1 -2.5,2.5 h-7.2 a2.5,2.5 0 0 1 -2.5,-2.5 v-6.8 a2.5,2.5 0 0 1 2.5,-2.5 z" />
+    <path android:fillColor="#5FD3CD" android:pathData="M47.2,37.6 h7.2 a2.5,2.5 0 0 1 2.5,2.5 v6.8 a2.5,2.5 0 0 1 -2.5,2.5 h-7.2 a2.5,2.5 0 0 1 -2.5,-2.5 v-6.8 a2.5,2.5 0 0 1 2.5,-2.5 z" />
+    <path android:fillColor="#5FD3CD" android:pathData="M62,37.6 h4.7 a2.5,2.5 0 0 1 2.5,2.5 v6.8 a2.5,2.5 0 0 1 -2.5,2.5 h-4.7 a2.5,2.5 0 0 1 -2.5,-2.5 v-6.8 a2.5,2.5 0 0 1 2.5,-2.5 z" />
+    <path android:fillColor="#5FD3CD" android:pathData="M72.1,37.6 H81.8 Q84.8,37.6 84.8,41.3 V49.4 H72.1 Z" />
+
+    <!-- Beltline divider -->
+    <path android:fillColor="#A7E9E5" android:pathData="M27.8,51 h57 v1.3 h-57 z" />
+
+    <!-- Door -->
+    <path android:fillColor="#CFF3F0" android:pathData="M65,53.2 h2.9 a1.7,1.7 0 0 1 1.7,1.7 v9.7 a1.7,1.7 0 0 1 -1.7,1.7 h-2.9 a1.7,1.7 0 0 1 -1.7,-1.7 v-9.7 a1.7,1.7 0 0 1 1.7,-1.7 z" />
+
+    <!-- Teal bumper + gold trim -->
+    <path android:fillColor="#0ABAB5" android:pathData="M29.7,55.3 h27.8 a1.9,1.9 0 0 1 0,3.8 h-27.8 a1.9,1.9 0 0 1 0,-3.8 z" />
+    <path android:fillColor="#E3C77A" android:pathData="M27.8,59.9 h31.6 v1.1 h-31.6 z" />
+    <path android:fillColor="#E3C77A" android:pathData="M84.7,54.4 h1.8 a0.8,0.8 0 0 1 0.8,0.8 v1.8 a0.8,0.8 0 0 1 -0.8,0.8 h-1.8 a0.8,0.8 0 0 1 -0.8,-0.8 v-1.8 a0.8,0.8 0 0 1 0.8,-0.8 z" />
+
+    <!-- Wheels -->
+    <path android:fillColor="#0C3B39" android:pathData="M41.3,68.8 m-7.6,0 a7.6,7.6 0 1 0 15.2,0 a7.6,7.6 0 1 0 -15.2,0" />
+    <path android:fillColor="#7FE3DE" android:pathData="M41.3,68.8 m-3.2,0 a3.2,3.2 0 1 0 6.4,0 a3.2,3.2 0 1 0 -6.4,0" />
+    <path android:fillColor="#0C3B39" android:pathData="M77.2,68.8 m-7.6,0 a7.6,7.6 0 1 0 15.2,0 a7.6,7.6 0 1 0 -15.2,0" />
+    <path android:fillColor="#7FE3DE" android:pathData="M77.2,68.8 m-3.2,0 a3.2,3.2 0 1 0 6.4,0 a3.2,3.2 0 1 0 -6.4,0" />
+
+    <!-- Ground line -->
+    <path android:fillColor="#8CFFFFFF" android:pathData="M26.6,81 h58.2 a1.25,1.25 0 0 1 0,2.5 h-58.2 a1.25,1.25 0 0 1 0,-2.5 z" />
 </vector>

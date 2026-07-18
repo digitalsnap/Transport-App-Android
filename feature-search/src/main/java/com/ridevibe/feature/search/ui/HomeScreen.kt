@@ -23,12 +23,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
@@ -48,9 +45,6 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -71,7 +65,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ridevibe.core.domain.model.BusClass
@@ -97,8 +94,6 @@ fun HomeScreen(
         infants: Int,
         bookingForSelf: Boolean,
     ) -> Unit,
-    onProfileClick: () -> Unit,
-    onBookingsClick: () -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val form by viewModel.formState.collectAsState()
@@ -150,8 +145,20 @@ fun HomeScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { CenterAlignedTopAppBar(title = { Text("RideVibe", fontWeight = FontWeight.Bold) }) },
-        bottomBar = { DemoBottomNav(onProfileClick = onProfileClick, onBookingsClick = onBookingsClick) },
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    // Two-tone wordmark per the brand sheet: Ride (ink) + Vibe (Tiffany).
+                    Text(
+                        buildAnnotatedString {
+                            append("Ride")
+                            withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("Vibe") }
+                        },
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
+            )
+        },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -752,41 +759,3 @@ private fun InviteFriendsCard() {
     }
 }
 
-@Composable
-private fun DemoBottomNav(onProfileClick: () -> Unit, onBookingsClick: () -> Unit) {
-    val itemColors = NavigationBarItemDefaults.colors(
-        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-        selectedIconColor = MaterialTheme.colorScheme.primary,
-        selectedTextColor = MaterialTheme.colorScheme.primary,
-    )
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-        NavigationBarItem(
-            selected = true,
-            onClick = { /* already home */ },
-            icon = { Icon(Icons.Filled.Home, contentDescription = "Home") },
-            label = { Text("Home") },
-            colors = itemColors,
-        )
-        NavigationBarItem(
-            selected = false,
-            onClick = onBookingsClick,
-            icon = { Icon(Icons.Filled.ConfirmationNumber, contentDescription = "Bookings") },
-            label = { Text("Bookings") },
-            colors = itemColors,
-        )
-        NavigationBarItem(
-            selected = false,
-            onClick = { /* presentation only — wallet not built */ },
-            icon = { Icon(Icons.Filled.AccountBalanceWallet, contentDescription = "Wallet") },
-            label = { Text("Wallet") },
-            colors = itemColors,
-        )
-        NavigationBarItem(
-            selected = false,
-            onClick = onProfileClick,
-            icon = { Icon(Icons.Filled.Person, contentDescription = "Profile") },
-            label = { Text("Profile") },
-            colors = itemColors,
-        )
-    }
-}

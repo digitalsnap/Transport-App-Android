@@ -1,14 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon: full-bleed variant of the RideVibe "Tiffany edition" mark
+     (the launcher applies its own mask, so the tile has square corners). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- RideVibe mark: white bus glyph on ink-black rounded tile (per design page 1) -->
-    <path
-        android:fillColor="#111827"
-        android:pathData="M0,0h108v108h-108z" />
+
+    <path android:pathData="M0,0 H108 V108 H0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108"
+                android:startColor="#3AD9D3"
+                android:centerColor="#0ABAB5"
+                android:endColor="#0A8F8A" />
+        </aapt:attr>
+    </path>
+
+    <path android:fillColor="#4DFFFFFF" android:pathData="M9.8,41.3 h13.8 a1.35,1.35 0 0 1 0,2.7 h-13.8 a1.35,1.35 0 0 1 0,-2.7 z" />
+    <path android:fillColor="#73FFFFFF" android:pathData="M7.3,50.6 h17.6 a1.35,1.35 0 0 1 0,2.7 h-17.6 a1.35,1.35 0 0 1 0,-2.7 z" />
+    <path android:fillColor="#4DFFFFFF" android:pathData="M11.1,59.9 h11.2 a1.35,1.35 0 0 1 0,2.7 h-11.2 a1.35,1.35 0 0 1 0,-2.7 z" />
+
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M28,34 C28,30 31,28 35,28 L73,28 C77,28 80,30 80,34 L80,66 C80,69 78,71 75,71 L72,71 C72,75 69,78 65,78 C61,78 58,75 58,71 L50,71 C50,75 47,78 43,78 C39,78 36,75 36,71 L33,71 C30,71 28,69 28,66 Z M34,36 L34,52 L50,52 L50,36 Z M58,36 L58,52 L74,52 L74,36 Z" />
+        android:pathData="M33.3,31.6 h48.1 a8,8 0 0 1 8,8 v21.1 a8,8 0 0 1 -8,8 h-48.1 a8,8 0 0 1 -8,-8 v-21.1 a8,8 0 0 1 8,-8 z" />
+
+    <path android:fillColor="#0ABAB5" android:pathData="M73.9,33.3 h7.2 a1.25,1.25 0 0 1 0,2.5 h-7.2 a1.25,1.25 0 0 1 0,-2.5 z" />
+
+    <path android:fillColor="#5FD3CD" android:pathData="M32.5,37.6 h7.2 a2.5,2.5 0 0 1 2.5,2.5 v6.8 a2.5,2.5 0 0 1 -2.5,2.5 h-7.2 a2.5,2.5 0 0 1 -2.5,-2.5 v-6.8 a2.5,2.5 0 0 1 2.5,-2.5 z" />
+    <path android:fillColor="#5FD3CD" android:pathData="M47.2,37.6 h7.2 a2.5,2.5 0 0 1 2.5,2.5 v6.8 a2.5,2.5 0 0 1 -2.5,2.5 h-7.2 a2.5,2.5 0 0 1 -2.5,-2.5 v-6.8 a2.5,2.5 0 0 1 2.5,-2.5 z" />
+    <path android:fillColor="#5FD3CD" android:pathData="M62,37.6 h4.7 a2.5,2.5 0 0 1 2.5,2.5 v6.8 a2.5,2.5 0 0 1 -2.5,2.5 h-4.7 a2.5,2.5 0 0 1 -2.5,-2.5 v-6.8 a2.5,2.5 0 0 1 2.5,-2.5 z" />
+    <path android:fillColor="#5FD3CD" android:pathData="M72.1,37.6 H81.8 Q84.8,37.6 84.8,41.3 V49.4 H72.1 Z" />
+
+    <path android:fillColor="#A7E9E5" android:pathData="M27.8,51 h57 v1.3 h-57 z" />
+    <path android:fillColor="#CFF3F0" android:pathData="M65,53.2 h2.9 a1.7,1.7 0 0 1 1.7,1.7 v9.7 a1.7,1.7 0 0 1 -1.7,1.7 h-2.9 a1.7,1.7 0 0 1 -1.7,-1.7 v-9.7 a1.7,1.7 0 0 1 1.7,-1.7 z" />
+    <path android:fillColor="#0ABAB5" android:pathData="M29.7,55.3 h27.8 a1.9,1.9 0 0 1 0,3.8 h-27.8 a1.9,1.9 0 0 1 0,-3.8 z" />
+    <path android:fillColor="#E3C77A" android:pathData="M27.8,59.9 h31.6 v1.1 h-31.6 z" />
+    <path android:fillColor="#E3C77A" android:pathData="M84.7,54.4 h1.8 a0.8,0.8 0 0 1 0.8,0.8 v1.8 a0.8,0.8 0 0 1 -0.8,0.8 h-1.8 a0.8,0.8 0 0 1 -0.8,-0.8 v-1.8 a0.8,0.8 0 0 1 0.8,-0.8 z" />
+
+    <path android:fillColor="#0C3B39" android:pathData="M41.3,68.8 m-7.6,0 a7.6,7.6 0 1 0 15.2,0 a7.6,7.6 0 1 0 -15.2,0" />
+    <path android:fillColor="#7FE3DE" android:pathData="M41.3,68.8 m-3.2,0 a3.2,3.2 0 1 0 6.4,0 a3.2,3.2 0 1 0 -6.4,0" />
+    <path android:fillColor="#0C3B39" android:pathData="M77.2,68.8 m-7.6,0 a7.6,7.6 0 1 0 15.2,0 a7.6,7.6 0 1 0 -15.2,0" />
+    <path android:fillColor="#7FE3DE" android:pathData="M77.2,68.8 m-3.2,0 a3.2,3.2 0 1 0 6.4,0 a3.2,3.2 0 1 0 -6.4,0" />
+
+    <path android:fillColor="#8CFFFFFF" android:pathData="M26.6,81 h58.2 a1.25,1.25 0 0 1 0,2.5 h-58.2 a1.25,1.25 0 0 1 0,-2.5 z" />
 </vector>
