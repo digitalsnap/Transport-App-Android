@@ -98,7 +98,8 @@ fun TicketScreen(
                 Button(onClick = viewModel::load) { Text("Retry") }
             }
 
-            else -> uiState.ticket?.let { ticket ->
+            uiState.tickets.isNotEmpty() -> {
+                val tickets = uiState.tickets
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -115,23 +116,33 @@ fun TicketScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    DigitalTicketCard(
-                        operatorName = ticket.trip.operatorName,
-                        classLabel = ticket.classLabel(),
-                        seatLabel = ticket.seatLabels.joinToString(", "),
-                        ticketId = ticket.id,
-                        dateLabel = formatDate(ticket.trip.departureEpochMillis),
-                        departureLabel = formatTime(ticket.trip.departureEpochMillis),
-                        origin = ticket.trip.origin,
-                        destination = ticket.trip.destination,
-                        passengerName = ticket.primaryPassenger.fullName,
-                        passengerTypeLabel = ticket.passengerTypeLabel(),
-                        qrPayload = ticket.qrPayload,
-                        coPassengers = ticket.coPassengers,
-                        infantCount = ticket.infantCount,
-                    )
-
-                    Spacer(modifier = Modifier.height(20.dp))
+                    tickets.forEachIndexed { index, ticket ->
+                        if (tickets.size > 1) {
+                            Text(
+                                if (index == 0) "OUTBOUND TRIP" else "RETURN TRIP",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 8.dp),
+                            )
+                        }
+                        DigitalTicketCard(
+                            operatorName = ticket.trip.operatorName,
+                            classLabel = ticket.classLabel(),
+                            seatLabel = ticket.seatLabels.joinToString(", "),
+                            ticketId = ticket.id,
+                            dateLabel = formatDate(ticket.trip.departureEpochMillis),
+                            departureLabel = formatTime(ticket.trip.departureEpochMillis),
+                            origin = ticket.trip.origin,
+                            destination = ticket.trip.destination,
+                            passengerName = ticket.primaryPassenger.fullName,
+                            passengerTypeLabel = ticket.passengerTypeLabel(),
+                            qrPayload = ticket.qrPayload,
+                            coPassengers = ticket.coPassengers,
+                            infantCount = ticket.infantCount,
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                    }
 
                     if (uiState.isReservation) {
                         PaymentRequiredNotice()
@@ -139,23 +150,28 @@ fun TicketScreen(
                     }
 
                     OutlinedButton(
-                        onClick = { shareTicket(context, ticket) },
+                        onClick = { shareTickets(context, tickets) },
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = RoundedCornerShape(26.dp),
                     ) {
                         Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.size(8.dp))
-                        Text("Share Ticket", fontWeight = FontWeight.Bold)
+                        Text(
+                            if (tickets.size > 1) "Share Tickets" else "Share Ticket",
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
 
                     TextButton(onClick = onBackToHome, modifier = Modifier.padding(vertical = 8.dp)) {
                         Text("Back to Home")
                     }
 
-                    ValidityNotice(ticket)
+                    ValidityNotice(tickets.first())
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
+
+            else -> Unit
         }
     }
 }
@@ -257,15 +273,19 @@ private fun ValidityNotice(ticket: Ticket) {
     }
 }
 
-private fun shareTicket(context: android.content.Context, ticket: Ticket) {
+private fun shareTickets(context: android.content.Context, tickets: List<Ticket>) {
     val text = buildString {
-        appendLine("RideVibe Ticket ${ticket.id}")
-        appendLine("${ticket.trip.origin} → ${ticket.trip.destination}")
-        appendLine("${formatDate(ticket.trip.departureEpochMillis)} • ${formatTime(ticket.trip.departureEpochMillis)}")
-        appendLine("Seat${if (ticket.seatLabels.size == 1) "" else "s"} ${ticket.seatLabels.joinToString(", ")} • ${ticket.trip.operatorName}")
-        appendLine("Passengers: ${ticket.primaryPassenger.fullName}" +
-            ticket.coPassengers.joinToString("") { ", ${it.firstName} ${it.lastName}" })
-        if (ticket.infantCount > 0) appendLine("Infants (free): ${ticket.infantCount}")
+        tickets.forEachIndexed { index, ticket ->
+            if (tickets.size > 1) appendLine(if (index == 0) "OUTBOUND" else "RETURN")
+            appendLine("RideVibe Ticket ${ticket.id}")
+            appendLine("${ticket.trip.origin} → ${ticket.trip.destination}")
+            appendLine("${formatDate(ticket.trip.departureEpochMillis)} • ${formatTime(ticket.trip.departureEpochMillis)}")
+            appendLine("Seat${if (ticket.seatLabels.size == 1) "" else "s"} ${ticket.seatLabels.joinToString(", ")} • ${ticket.trip.operatorName}")
+            appendLine("Passengers: ${ticket.primaryPassenger.fullName}" +
+                ticket.coPassengers.joinToString("") { ", ${it.firstName} ${it.lastName}" })
+            if (ticket.infantCount > 0) appendLine("Infants (free): ${ticket.infantCount}")
+            if (index < tickets.size - 1) appendLine()
+        }
     }
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"

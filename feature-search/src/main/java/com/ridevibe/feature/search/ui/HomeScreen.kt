@@ -187,6 +187,7 @@ fun HomeScreen(
                 onPickPassengers = { showPassengerDialog = true },
                 onBookingForSelfChanged = viewModel::onBookingForSelfChanged,
                 onSearch = {
+                    viewModel.primeCart()
                     onSearch(
                         form.origin,
                         form.destination,

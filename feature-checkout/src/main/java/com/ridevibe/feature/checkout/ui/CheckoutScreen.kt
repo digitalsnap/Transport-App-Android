@@ -72,8 +72,8 @@ fun CheckoutScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    LaunchedEffect(uiState.confirmedTicket) {
-        uiState.confirmedTicket?.let { onBookingConfirmed(it.id) }
+    LaunchedEffect(uiState.confirmedTicketIds) {
+        uiState.confirmedTicketIds?.let(onBookingConfirmed)
     }
 
     Scaffold(
@@ -104,7 +104,8 @@ fun CheckoutScreen(
                     val label = when {
                         uiState.isSubmitting -> "Processing…"
                         uiState.paymentMethod == PaymentMethod.CASH_ON_BOARD ->
-                            "Reserve Seat • ₱%,.2f".format(uiState.totalPhp)
+                            "Reserve • ₱%,.2f".format(uiState.totalPhp)
+                        uiState.isRoundTrip -> "Pay Now (2 trips) • ₱%,.2f".format(uiState.totalPhp)
                         else -> "Pay Now • ₱%,.2f".format(uiState.totalPhp)
                     }
                     Text(label, fontWeight = FontWeight.Bold)
@@ -311,6 +312,41 @@ private fun OrderSummaryCard(uiState: CheckoutUiState) {
                         uiState.trip?.departureEpochMillis?.let(::formatDeparture) ?: "—",
                         fontWeight = FontWeight.SemiBold,
                     )
+                }
+            }
+
+            uiState.returnTrip?.let { returnTrip ->
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "RETURN • ${returnTrip.operatorName}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column {
+                        Text(
+                            "${returnTrip.origin} → ${returnTrip.destination}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            "Seat${if (uiState.returnSeatIds.size == 1) "" else "s"} ${uiState.returnSeatIds.joinToString(", ")}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            "DEPARTURE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(formatDeparture(returnTrip.departureEpochMillis), fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }
@@ -597,10 +633,24 @@ private fun PaymentMethodCard(
 private fun FareBreakdown(uiState: CheckoutUiState) {
     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            FareRow(
-                "Base Fare (${uiState.seatCount} Seat${if (uiState.seatCount == 1) "" else "s"})",
-                "₱%,.2f".format(uiState.baseFarePhp),
-            )
+            if (uiState.isRoundTrip) {
+                FareRow(
+                    "Outbound • ${uiState.trip?.operatorName ?: ""} " +
+                        "(₱%,.0f × ${uiState.seatCount})".format(uiState.farePerSeat),
+                    "₱%,.2f".format(uiState.outboundBasePhp),
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                FareRow(
+                    "Return • ${uiState.returnTrip?.operatorName ?: ""} " +
+                        "(₱%,.0f × ${uiState.returnSeatIds.size})".format(uiState.returnFarePerSeat),
+                    "₱%,.2f".format(uiState.returnBasePhp),
+                )
+            } else {
+                FareRow(
+                    "Base Fare (${uiState.seatCount} Seat${if (uiState.seatCount == 1) "" else "s"})",
+                    "₱%,.2f".format(uiState.baseFarePhp),
+                )
+            }
             if (uiState.infantCount > 0) {
                 Spacer(modifier = Modifier.height(6.dp))
                 FareRow(
@@ -612,7 +662,8 @@ private fun FareBreakdown(uiState: CheckoutUiState) {
                 Spacer(modifier = Modifier.height(6.dp))
                 FareRow(
                     "Fare discounts (${uiState.discountedPassengerCount} passenger" +
-                        "${if (uiState.discountedPassengerCount == 1) "" else "s"} × 20%)",
+                        "${if (uiState.discountedPassengerCount == 1) "" else "s"} × 20%" +
+                        "${if (uiState.isRoundTrip) ", both trips" else ""})",
                     "−₱%,.2f".format(uiState.discountPhp),
                 )
             }

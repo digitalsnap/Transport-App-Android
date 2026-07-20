@@ -81,6 +81,14 @@ fun ResultsScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
+                    uiState.legLabel?.let { label ->
+                        Text(
+                            label.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     Text(
                         "${uiState.origin} to ${uiState.destination}",
                         style = MaterialTheme.typography.titleSmall,
