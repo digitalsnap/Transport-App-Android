@@ -43,7 +43,9 @@ data class SearchFormState(
         }.joinToString(", ")
 
     val canSearch: Boolean
-        get() = origin.isNotBlank() && destination.isNotBlank() && departureDateMillis != null &&
+        get() = origin.isNotBlank() && destination.isNotBlank() &&
+            !origin.equals(destination, ignoreCase = true) && // no PITX → PITX trips
+            departureDateMillis != null &&
             seatCount >= 1 &&
             (tripType == TripType.ONE_WAY ||
                 (returnDateMillis != null && returnDateMillis >= (departureDateMillis ?: 0L)))

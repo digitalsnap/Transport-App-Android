@@ -48,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -590,7 +591,15 @@ private fun CounterRow(
 
 @Composable
 private fun DateDialog(initial: Long?, onPicked: (Long) -> Unit, onDismiss: () -> Unit) {
-    val state = rememberDatePickerState(initialSelectedDateMillis = initial)
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = initial,
+        selectableDates = object : SelectableDates {
+            // Block past dates. The picker works in UTC-midnight millis, so a
+            // one-day grace window keeps "today" selectable in UTC+8 (PH time).
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                utcTimeMillis >= System.currentTimeMillis() - 86_400_000L
+        },
+    )
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {

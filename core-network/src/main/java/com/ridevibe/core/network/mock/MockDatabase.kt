@@ -272,9 +272,13 @@ class MockDatabase @Inject constructor() {
 
     fun updateSeat(tripId: String, seatId: String, status: SeatStatus, lockedBy: String?): Boolean {
         val seats = seatMaps[tripId] ?: return false
-        val index = seats.indexOfFirst { it.id == seatId }
-        if (index == -1) return false
-        seats[index] = seats[index].copy(status = status, lockedByUserId = lockedBy)
+        // Synchronized: the simulated "other passenger" coroutine and UI
+        // actions can mutate the same seat list from different dispatchers.
+        synchronized(seats) {
+            val index = seats.indexOfFirst { it.id == seatId }
+            if (index == -1) return false
+            seats[index] = seats[index].copy(status = status, lockedByUserId = lockedBy)
+        }
         seatEvents.tryEmit(
             SeatStatusEvent(tripId = tripId, seatId = seatId, status = status, lockedByUserId = lockedBy),
         )

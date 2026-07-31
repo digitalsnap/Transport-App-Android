@@ -7,7 +7,6 @@ import com.ridevibe.core.domain.model.CoPassenger
 import com.ridevibe.core.domain.model.Passenger
 import com.ridevibe.core.domain.model.PassengerType
 import com.ridevibe.core.domain.model.PaymentMethod
-import com.ridevibe.core.domain.model.Ticket
 import com.ridevibe.core.domain.model.Trip
 import com.ridevibe.core.domain.repository.ProfileRepository
 import com.ridevibe.core.domain.session.BookingCart
@@ -39,6 +38,9 @@ data class CheckoutUiState(
     /** Round trip only: the return leg collected by the booking cart. */
     val returnTrip: Trip? = null,
     val returnSeatIds: List<String> = emptyList(),
+    /** True when the cart holds a return leg that MUST load before paying —
+     *  prevents silently charging for the outbound leg alone. */
+    val expectsReturnLeg: Boolean = false,
     val infantCount: Int = 0,
     /** True when the account owner is the primary traveler. */
     val bookingForSelf: Boolean = true,
@@ -90,6 +92,7 @@ data class CheckoutUiState(
     val totalPhp: Double get() = baseFarePhp - discountPhp
 
     val canSubmit: Boolean get() = trip != null &&
+        (!expectsReturnLeg || returnTrip != null) &&
         (useAccountAsPrimary || (primaryFirstName.isNotBlank() && primaryLastName.isNotBlank())) &&
         (!requiresIdCapture || discountIdImagePath != null) &&
         coPassengers.all { it.isComplete }
@@ -116,6 +119,7 @@ class CheckoutViewModel @Inject constructor(
             seatIds = seatIds,
             infantCount = infantCount,
             bookingForSelf = bookingForSelf,
+            expectsReturnLeg = bookingCart.isRoundTrip && bookingCart.returnTripId != null,
             coPassengers = List((seatIds.size - 1).coerceAtLeast(0)) { CoPassengerForm() },
         ),
     )

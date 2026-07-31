@@ -1,6 +1,10 @@
 package com.ridevibe.feature.checkout.ocr
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -8,14 +12,22 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -26,11 +38,61 @@ import java.io.File
 
 /**
  * Live camera preview + capture button for scanning a Student/Senior/PWD ID.
- * On capture, runs the frame through ML Kit text recognition so the caller can
+ * Requests the CAMERA runtime permission before binding CameraX — binding
+ * without it crashes or shows a dead preview on real devices. On capture,
+ * the frame runs through ML Kit text recognition so the caller can
  * pre-fill/validate the ID number before submitting it with the booking.
  */
 @Composable
 fun IdCaptureCamera(
+    onCaptured: (imagePath: String, recognizedText: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    var hasPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    var permissionDenied by remember { mutableStateOf(false) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        hasPermission = granted
+        permissionDenied = !granted
+    }
+
+    LaunchedEffect(Unit) {
+        if (!hasPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
+    }
+
+    when {
+        hasPermission -> CameraPreviewAndCapture(onCaptured = onCaptured, modifier = modifier)
+
+        permissionDenied -> Column(modifier = modifier.fillMaxWidth()) {
+            Text(
+                "Camera access is needed to photograph the ID. Allow camera " +
+                    "permission to continue, or grant it from system settings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                Text("Allow camera")
+            }
+        }
+
+        else -> Text(
+            "Requesting camera permission…",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = modifier.padding(vertical = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun CameraPreviewAndCapture(
     onCaptured: (imagePath: String, recognizedText: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {

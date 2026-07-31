@@ -1,5 +1,6 @@
 package com.ridevibe.core.network.di
 
+import com.ridevibe.core.network.BuildConfig
 import com.ridevibe.core.network.api.CrsApiService
 import dagger.Module
 import dagger.Provides
@@ -40,7 +41,13 @@ object NetworkModule {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS) // no timeout — WebSocket stays open
         .pingInterval(20, TimeUnit.SECONDS)
-        .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+        .apply {
+            // Never log HTTP traffic in release builds — requests can carry
+            // passenger names, contact numbers, and booking references.
+            if (BuildConfig.DEBUG) {
+                addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+            }
+        }
         .build()
 
     @Provides

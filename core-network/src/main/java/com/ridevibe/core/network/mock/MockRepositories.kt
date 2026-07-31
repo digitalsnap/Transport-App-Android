@@ -105,7 +105,13 @@ class MockSeatRepository @Inject constructor(
     }
 
     override suspend fun releaseSeat(tripId: String, seatId: String): Result<Unit> {
-        db.updateSeat(tripId, seatId, SeatStatus.AVAILABLE, lockedBy = null)
+        // Only release a seat this user is holding. Guards against ever
+        // flipping an OCCUPIED (paid) seat or another passenger's lock back
+        // to AVAILABLE — e.g. when a ViewModel cleans up after booking.
+        val seat = db.seatMap(tripId).firstOrNull { it.id == seatId }
+        if (seat?.status == SeatStatus.LOCKED && seat.lockedByUserId == CURRENT_USER_ID) {
+            db.updateSeat(tripId, seatId, SeatStatus.AVAILABLE, lockedBy = null)
+        }
         return Result.success(Unit)
     }
 
