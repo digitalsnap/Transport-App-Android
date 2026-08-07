@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DirectionsBus
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -48,6 +49,7 @@ import java.util.Locale
 fun BookingsScreen(
     onBack: () -> Unit,
     onOpenTicket: (ticketId: String) -> Unit,
+    onProfileClick: () -> Unit,
     viewModel: BookingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -60,6 +62,11 @@ fun BookingsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to home")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onProfileClick) {
+                        Icon(Icons.Filled.Person, contentDescription = "Profile")
                     }
                 },
             )

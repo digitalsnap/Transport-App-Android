@@ -15,9 +15,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.ridevibe.app.ui.bookings.BookingsScreen
+import com.ridevibe.app.ui.chat.ChatScreen
 import com.ridevibe.app.ui.components.BottomTab
 import com.ridevibe.app.ui.components.RideVibeBottomNav
 import com.ridevibe.app.ui.profile.ProfileScreen
+import com.ridevibe.app.ui.scan.ScanScreen
+import com.ridevibe.app.ui.wallet.WalletScreen
 import com.ridevibe.app.ui.welcome.WelcomeScreen
 import com.ridevibe.core.domain.model.BusClass
 import com.ridevibe.feature.checkout.ui.CheckoutScreen
@@ -31,6 +34,9 @@ private object Routes {
     const val HOME = "home"
     const val PROFILE = "profile"
     const val BOOKINGS = "bookings"
+    const val SCAN = "scan"
+    const val WALLET = "wallet"
+    const val CHAT = "chat"
     const val RESULTS = "results/{origin}/{destination}/{dateMillis}/{busClass}/{adults}/{children}/{infants}/{forSelf}/{leg}"
     const val SEAT_MAP = "trips/{tripId}/seatmap/{seatCount}/{infants}/{forSelf}/{leg}"
     const val CHECKOUT = "trips/{tripId}/checkout/{seats}/{infants}/{forSelf}"
@@ -69,8 +75,17 @@ fun RideVibeNavGraph(navController: NavHostController) {
     val selectedTab = when (currentRoute) {
         Routes.HOME -> BottomTab.HOME
         Routes.BOOKINGS -> BottomTab.BOOKINGS
-        Routes.PROFILE -> BottomTab.PROFILE
+        Routes.SCAN -> BottomTab.SCAN
+        Routes.WALLET -> BottomTab.WALLET
+        Routes.CHAT -> BottomTab.CHAT
         else -> null
+    }
+
+    fun navigateToTab(route: String) {
+        navController.navigate(route) {
+            popUpTo(Routes.HOME) { inclusive = route == Routes.HOME }
+            launchSingleTop = true
+        }
     }
 
     Scaffold(
@@ -85,18 +100,10 @@ fun RideVibeNavGraph(navController: NavHostController) {
                             launchSingleTop = true
                         }
                     },
-                    onBookingsClick = {
-                        navController.navigate(Routes.BOOKINGS) {
-                            popUpTo(Routes.HOME)
-                            launchSingleTop = true
-                        }
-                    },
-                    onProfileClick = {
-                        navController.navigate(Routes.PROFILE) {
-                            popUpTo(Routes.HOME)
-                            launchSingleTop = true
-                        }
-                    },
+                    onBookingsClick = { navigateToTab(Routes.BOOKINGS) },
+                    onScanClick = { navigateToTab(Routes.SCAN) },
+                    onWalletClick = { navigateToTab(Routes.WALLET) },
+                    onChatClick = { navigateToTab(Routes.CHAT) },
                 )
             }
         },
@@ -125,6 +132,29 @@ fun RideVibeNavGraph(navController: NavHostController) {
                         Routes.results(origin, destination, dateMillis, busClass, adults, children, infants, forSelf, leg),
                     )
                 },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
+            )
+        }
+
+        composable(Routes.SCAN) {
+            ScanScreen(
+                onBack = { navController.popBackStack() },
+                onOpenTicket = { ticketId -> navController.navigate(Routes.ticket(ticketId)) },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
+            )
+        }
+
+        composable(Routes.WALLET) {
+            WalletScreen(
+                onBack = { navController.popBackStack() },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
+            )
+        }
+
+        composable(Routes.CHAT) {
+            ChatScreen(
+                onBack = { navController.popBackStack() },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
             )
         }
 
@@ -132,6 +162,7 @@ fun RideVibeNavGraph(navController: NavHostController) {
             BookingsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenTicket = { ticketId -> navController.navigate(Routes.ticket(ticketId)) },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
             )
         }
 

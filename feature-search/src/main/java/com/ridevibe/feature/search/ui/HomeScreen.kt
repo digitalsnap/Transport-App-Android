@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Group
@@ -36,7 +37,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -66,10 +66,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ridevibe.core.domain.model.BusClass
@@ -95,6 +92,7 @@ fun HomeScreen(
         infants: Int,
         bookingForSelf: Boolean,
     ) -> Unit,
+    onProfileClick: () -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val form by viewModel.formState.collectAsState()
@@ -147,18 +145,51 @@ fun HomeScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    // Two-tone wordmark per the brand sheet: Ride (ink) + Vibe (Tiffany).
-                    Text(
-                        buildAnnotatedString {
-                            append("Ride")
-                            withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("Vibe") }
-                        },
-                        fontWeight = FontWeight.Bold,
-                    )
-                },
-            )
+            // Search-first header: tapping the bar opens the destination picker
+            // (predictive search); profile lives top-right.
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { locationPickerTarget = LocationTarget.TO },
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Filled.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                if (form.destination.isBlank()) "Where are you going?" else form.destination,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (form.destination.isBlank()) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                modifier = Modifier.padding(start = 10.dp),
+                            )
+                        }
+                    }
+                    IconButton(onClick = onProfileClick) {
+                        Icon(
+                            Icons.Filled.AccountCircle,
+                            contentDescription = "Profile",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(32.dp),
+                        )
+                    }
+                }
+            }
         },
     ) { padding ->
         Column(

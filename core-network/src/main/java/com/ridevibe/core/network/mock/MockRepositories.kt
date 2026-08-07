@@ -8,14 +8,19 @@ import com.ridevibe.core.domain.model.PaymentMethod
 import com.ridevibe.core.domain.model.Seat
 import com.ridevibe.core.domain.model.SeatStatus
 import com.ridevibe.core.domain.model.SeatStatusEvent
+import com.ridevibe.core.domain.model.SupportMessage
 import com.ridevibe.core.domain.model.Ticket
 import com.ridevibe.core.domain.model.Trip
 import com.ridevibe.core.domain.model.UserProfile
 import com.ridevibe.core.domain.model.Vehicle
+import com.ridevibe.core.domain.model.Wallet
 import com.ridevibe.core.domain.repository.CheckoutRepository
 import com.ridevibe.core.domain.repository.ProfileRepository
 import com.ridevibe.core.domain.repository.SeatRepository
+import com.ridevibe.core.domain.repository.SupportRepository
 import com.ridevibe.core.domain.repository.TripRepository
+import com.ridevibe.core.domain.repository.WalletRepository
+import java.util.UUID
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filter
@@ -175,5 +180,53 @@ class MockProfileRepository @Inject constructor(
     override suspend fun removeVehicle(vehicleId: String): Result<Unit> {
         db.removeVehicle(vehicleId)
         return Result.success(Unit)
+    }
+}
+
+@Singleton
+class MockWalletRepository @Inject constructor(
+    private val db: MockDatabase,
+) : WalletRepository {
+
+    override suspend fun getWallet(): Wallet {
+        delay(FAKE_LATENCY_MS / 2)
+        return Wallet(balancePhp = db.walletBalancePhp(), transactions = db.walletTransactions())
+    }
+}
+
+@Singleton
+class MockSupportRepository @Inject constructor(
+    private val db: MockDatabase,
+) : SupportRepository {
+
+    private val cannedReplies = listOf(
+        "Thanks for reaching out! An agent will reply within a few minutes.",
+        "Got it — we're checking that for you now.",
+        "Thanks for the details. For urgent departures, you can also call the terminal hotline shown on your ticket.",
+    )
+    private var replyIndex = 0
+
+    override suspend fun getMessages(): List<SupportMessage> = db.supportMessages()
+
+    override suspend fun sendMessage(text: String): List<SupportMessage> {
+        db.addSupportMessage(
+            SupportMessage(
+                id = UUID.randomUUID().toString(),
+                text = text,
+                fromUser = true,
+                timestampEpochMillis = System.currentTimeMillis(),
+            ),
+        )
+        // Simulated agent acknowledgement until a real support channel exists.
+        delay(900)
+        db.addSupportMessage(
+            SupportMessage(
+                id = UUID.randomUUID().toString(),
+                text = cannedReplies[replyIndex++ % cannedReplies.size],
+                fromUser = false,
+                timestampEpochMillis = System.currentTimeMillis(),
+            ),
+        )
+        return db.supportMessages()
     }
 }

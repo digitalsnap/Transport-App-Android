@@ -3,13 +3,17 @@ package com.ridevibe.core.network.di
 import com.ridevibe.core.domain.repository.CheckoutRepository
 import com.ridevibe.core.domain.repository.ProfileRepository
 import com.ridevibe.core.domain.repository.SeatRepository
+import com.ridevibe.core.domain.repository.SupportRepository
 import com.ridevibe.core.domain.repository.TripRepository
+import com.ridevibe.core.domain.repository.WalletRepository
 import com.ridevibe.core.network.CheckoutRepositoryImpl
 import com.ridevibe.core.network.SeatRepositoryImpl
 import com.ridevibe.core.network.TripRepositoryImpl
 import com.ridevibe.core.network.mock.MockCheckoutRepository
 import com.ridevibe.core.network.mock.MockProfileRepository
 import com.ridevibe.core.network.mock.MockSeatRepository
+import com.ridevibe.core.network.mock.MockSupportRepository
+import com.ridevibe.core.network.mock.MockWalletRepository
 import com.ridevibe.core.network.mock.MockTripRepository
 import dagger.Module
 import dagger.Provides
@@ -55,4 +59,16 @@ object RepositoryModule {
     fun provideProfileRepository(
         mock: Provider<MockProfileRepository>,
     ): ProfileRepository = mock.get() // TODO: swap in the real impl once the CRS has profile endpoints
+
+    @Provides
+    @Singleton
+    fun provideWalletRepository(
+        mock: Provider<MockWalletRepository>,
+    ): WalletRepository = mock.get() // TODO: real impl arrives with the payments integration
+
+    @Provides
+    @Singleton
+    fun provideSupportRepository(
+        mock: Provider<MockSupportRepository>,
+    ): SupportRepository = mock.get() // TODO: real impl arrives with the support-chat backend
 }

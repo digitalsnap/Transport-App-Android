@@ -66,6 +66,13 @@ dependencies {
     implementation(libs.play.services.auth)
     implementation(libs.facebook.login)
 
+    // QR ticket scanner (bottom-nav Scan tab)
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
+    implementation(libs.mlkit.barcode.scanning)
+
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
     ksp(libs.hilt.compiler)
