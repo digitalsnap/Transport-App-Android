@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ridevibe.app.ui.theme.charcoalTopBarColors
 import com.ridevibe.core.domain.model.Wallet
 import com.ridevibe.core.domain.repository.WalletRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -87,6 +88,7 @@ fun WalletScreen(
                         Icon(Icons.Filled.Person, contentDescription = "Profile")
                     }
                 },
+                colors = charcoalTopBarColors(),
             )
         },
     ) { padding ->

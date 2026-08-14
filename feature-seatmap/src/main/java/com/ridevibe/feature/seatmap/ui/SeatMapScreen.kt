@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,6 +49,11 @@ import com.ridevibe.feature.seatmap.viewmodel.SeatMapViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+// Chrome + seat-state tokens mirrored from the design palette (:app theme not visible here).
+private val ChromeCharcoal = Color(0xFF2C363F)
+private val SeatTaken = Color(0xFFC9D2D1)
+private val SlateSage = Color(0xFF7C8C8B)
 
 /** "Choose Seats" screen per the Visily design (page 4): 2+aisle+2 cabin layout. */
 @Composable
@@ -68,6 +74,12 @@ fun SeatMapScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = ChromeCharcoal,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White,
+                ),
             )
         },
         bottomBar = {
@@ -205,8 +217,8 @@ private fun SeatLegend() {
         ) {
             LegendItem("Available", MaterialTheme.colorScheme.surface, bordered = true)
             LegendItem("Selected", MaterialTheme.colorScheme.primary)
-            LegendItem("Occupied", MaterialTheme.colorScheme.surfaceVariant)
-            LegendItem("Locked", MaterialTheme.colorScheme.tertiaryContainer)
+            LegendItem("Occupied", SeatTaken)
+            LegendItem("Locked", MaterialTheme.colorScheme.secondaryContainer)
         }
     }
 }
@@ -300,8 +312,8 @@ private fun SeatCell(seat: Seat, onClick: (Seat) -> Unit) {
     val (background, contentColor) = when (seat.status) {
         SeatStatus.AVAILABLE -> MaterialTheme.colorScheme.surface to MaterialTheme.colorScheme.onSurface
         SeatStatus.SELECTED -> MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.onPrimary
-        SeatStatus.OCCUPIED -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-        SeatStatus.LOCKED -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+        SeatStatus.OCCUPIED -> SeatTaken to SlateSage
+        SeatStatus.LOCKED -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
     }
 
     Box(

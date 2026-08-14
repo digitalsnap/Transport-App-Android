@@ -43,12 +43,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,6 +64,9 @@ import com.ridevibe.feature.checkout.viewmodel.CoPassengerForm
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+// Charcoal chrome token mirrored from the design palette (:app theme not visible here).
+private val ChromeCharcoal = Color(0xFF2C363F)
 
 /** Checkout screen per the Visily design (page 5). */
 @Composable
@@ -91,6 +96,12 @@ fun CheckoutScreen(
                         Icon(Icons.Filled.Close, contentDescription = "Close checkout")
                     }
                 },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = ChromeCharcoal,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White,
+                ),
             )
         },
         bottomBar = {

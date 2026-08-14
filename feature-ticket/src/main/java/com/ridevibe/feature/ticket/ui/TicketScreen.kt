@@ -31,6 +31,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,6 +50,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+// Charcoal chrome token mirrored from the design palette (:app theme not visible here).
+private val ChromeCharcoal = Color(0xFF2C363F)
+
 /** "Your Ticket" screen per the Visily design: confirmed (page 6) or unpaid reservation (page 7). */
 @Composable
 fun TicketScreen(
@@ -59,7 +63,7 @@ fun TicketScreen(
     val context = LocalContext.current
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Your Ticket", fontWeight = FontWeight.Bold) },
@@ -73,6 +77,12 @@ fun TicketScreen(
                         Icon(Icons.Filled.Close, contentDescription = "Close")
                     }
                 },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = ChromeCharcoal,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White,
+                ),
             )
         },
     ) { padding ->
@@ -183,7 +193,7 @@ private fun ConfirmedHeader() {
         Icon(
             Icons.Filled.CheckCircle,
             contentDescription = null,
-            tint = Color(0xFF22C55E),
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(56.dp),
         )
         Spacer(modifier = Modifier.height(12.dp))

@@ -84,7 +84,7 @@ fun WelcomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -193,6 +193,10 @@ fun WelcomeScreen(
             },
             modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = RoundedCornerShape(24.dp),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
         ) {
             Icon(
                 painter = painterResource(R.drawable.ic_google_g),
@@ -206,13 +210,17 @@ fun WelcomeScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        Button(
+        OutlinedButton(
             onClick = { startFacebookLogin(context, facebookCallbackManager, onGetStarted) },
             modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = RoundedCornerShape(24.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = FacebookBlue, contentColor = Color.White),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
         ) {
-            Text("f", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            // The "f" mark keeps Facebook's brand blue; the button matches the white social cards.
+            Text("f", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = FacebookBlue)
             Spacer(modifier = Modifier.size(10.dp))
             Text("Continue with Facebook", fontWeight = FontWeight.SemiBold)
         }

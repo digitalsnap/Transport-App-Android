@@ -7,12 +7,15 @@ import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import com.ridevibe.app.ui.theme.Charcoal
+import com.ridevibe.app.ui.theme.SlateSage
+import com.ridevibe.app.ui.theme.Tiffany
 
 enum class BottomTab { HOME, BOOKINGS, SCAN, WALLET, CHAT }
 
@@ -30,12 +33,15 @@ fun RideVibeBottomNav(
     onWalletClick: () -> Unit,
     onChatClick: () -> Unit,
 ) {
+    // Charcoal chrome: active items Tiffany, inactive Slate Sage, no indicator pill.
     val itemColors = NavigationBarItemDefaults.colors(
-        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-        selectedIconColor = MaterialTheme.colorScheme.primary,
-        selectedTextColor = MaterialTheme.colorScheme.primary,
+        indicatorColor = Color.Transparent,
+        selectedIconColor = Tiffany,
+        selectedTextColor = Tiffany,
+        unselectedIconColor = SlateSage,
+        unselectedTextColor = SlateSage,
     )
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+    NavigationBar(containerColor = Charcoal) {
         NavigationBarItem(
             selected = selectedTab == BottomTab.HOME,
             onClick = onHomeClick,

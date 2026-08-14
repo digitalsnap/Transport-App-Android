@@ -16,6 +16,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.ridevibe.app.ui.bookings.BookingsScreen
 import com.ridevibe.app.ui.chat.ChatScreen
+import com.ridevibe.app.ui.chat.SupportScreen
 import com.ridevibe.app.ui.components.BottomTab
 import com.ridevibe.app.ui.components.RideVibeBottomNav
 import com.ridevibe.app.ui.profile.ProfileScreen
@@ -36,7 +37,11 @@ private object Routes {
     const val BOOKINGS = "bookings"
     const val SCAN = "scan"
     const val WALLET = "wallet"
+
+    // Support: the Chat tab lands on topic triage; the live thread is a
+    // separate destination that carries the chosen topic + booking context.
     const val CHAT = "chat"
+    const val CHAT_THREAD = "chat/thread?topic={topic}&booking={booking}"
     const val RESULTS = "results/{origin}/{destination}/{dateMillis}/{busClass}/{adults}/{children}/{infants}/{forSelf}/{leg}"
     const val SEAT_MAP = "trips/{tripId}/seatmap/{seatCount}/{infants}/{forSelf}/{leg}"
     const val CHECKOUT = "trips/{tripId}/checkout/{seats}/{infants}/{forSelf}"
@@ -62,6 +67,9 @@ private object Routes {
         "trips/${Uri.encode(tripId)}/checkout/${Uri.encode(seatIdsCsv)}/$infants/$forSelf"
 
     fun ticket(ticketIds: String) = "tickets/${Uri.encode(ticketIds)}"
+
+    fun chatThread(topic: String?, bookingLabel: String?) =
+        "chat/thread?topic=${Uri.encode(topic.orEmpty())}&booking=${Uri.encode(bookingLabel.orEmpty())}"
 }
 
 @Composable
@@ -77,7 +85,7 @@ fun RideVibeNavGraph(navController: NavHostController) {
         Routes.BOOKINGS -> BottomTab.BOOKINGS
         Routes.SCAN -> BottomTab.SCAN
         Routes.WALLET -> BottomTab.WALLET
-        Routes.CHAT -> BottomTab.CHAT
+        Routes.CHAT, Routes.CHAT_THREAD -> BottomTab.CHAT
         else -> null
     }
 
@@ -152,6 +160,23 @@ fun RideVibeNavGraph(navController: NavHostController) {
         }
 
         composable(Routes.CHAT) {
+            SupportScreen(
+                onBack = { navController.popBackStack() },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
+                onTopicSelected = { topic, bookingLabel ->
+                    navController.navigate(Routes.chatThread(topic, bookingLabel))
+                },
+                onChatNow = { navController.navigate(Routes.chatThread(topic = null, bookingLabel = null)) },
+            )
+        }
+
+        composable(
+            route = Routes.CHAT_THREAD,
+            arguments = listOf(
+                navArgument("topic") { type = NavType.StringType; defaultValue = "" },
+                navArgument("booking") { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) {
             ChatScreen(
                 onBack = { navController.popBackStack() },
                 onProfileClick = { navController.navigate(Routes.PROFILE) },

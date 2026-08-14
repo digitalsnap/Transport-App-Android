@@ -37,8 +37,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ridevibe.app.ui.theme.charcoalTopBarColors
 import com.ridevibe.core.domain.model.SupportMessage
 import com.ridevibe.core.domain.repository.SupportRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -60,6 +62,7 @@ data class ChatUiState(
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val supportRepository: SupportRepository,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -68,6 +71,19 @@ class ChatViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             _uiState.update { it.copy(messages = supportRepository.getMessages()) }
+            // Arriving from triage: open the thread with the chosen topic and
+            // booking attached so the agent has context up front.
+            val topic = savedStateHandle.get<String>("topic").orEmpty()
+            val bookingLabel = savedStateHandle.get<String>("booking").orEmpty()
+            if (topic.isNotBlank()) {
+                val intro = buildString {
+                    append("Topic: ").append(topic)
+                    if (bookingLabel.isNotBlank()) append(" • Booking ").append(bookingLabel)
+                }
+                _uiState.update { it.copy(isSending = true) }
+                val updated = supportRepository.sendMessage(intro)
+                _uiState.update { it.copy(isSending = false, messages = updated) }
+            }
         }
     }
 
@@ -113,6 +129,7 @@ fun ChatScreen(
                         Icon(Icons.Filled.Person, contentDescription = "Profile")
                     }
                 },
+                colors = charcoalTopBarColors(),
             )
         },
         bottomBar = {

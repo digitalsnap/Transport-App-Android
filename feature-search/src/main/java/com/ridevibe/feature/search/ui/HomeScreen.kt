@@ -145,16 +145,16 @@ fun HomeScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            // Search-first header: tapping the bar opens the destination picker
-            // (predictive search); profile lives top-right.
-            Surface(color = MaterialTheme.colorScheme.surface) {
+            // Search-first header on Charcoal chrome: tapping the bar opens the
+            // destination picker (predictive search); profile lives top-right.
+            Surface(color = ChromeCharcoal) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Surface(
                         shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        color = MaterialTheme.colorScheme.surface,
                         modifier = Modifier
                             .weight(1f)
                             .clickable { locationPickerTarget = LocationTarget.TO },
@@ -169,7 +169,7 @@ fun HomeScreen(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
-                                if (form.destination.isBlank()) "Where are you going?" else form.destination,
+                                if (form.destination.isBlank()) "Search trips" else form.destination,
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = if (form.destination.isBlank()) {
                                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -184,7 +184,7 @@ fun HomeScreen(
                         Icon(
                             Icons.Filled.AccountCircle,
                             contentDescription = "Profile",
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = ChromeTiffanySoft,
                             modifier = Modifier.size(32.dp),
                         )
                     }
@@ -759,7 +759,7 @@ private fun DealSlide(deal: DemoDeal) {
                 deal.priceLine,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFFFD8A8),
+                color = ChromeTiffanySoft,
             )
         }
     }
@@ -777,7 +777,7 @@ private fun InviteFriendsCard() {
                     "Invite Friends",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(

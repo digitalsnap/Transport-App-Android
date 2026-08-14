@@ -4,74 +4,82 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.TopAppBarColors
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-// RideVibe brand palette — "Tiffany edition" identity kit:
-// Tiffany Blue primary, Deep Teal support, Gold accent, Ink text.
-private val TiffanyBlue = Color(0xFF0ABAB5)
-private val TiffanyLight = Color(0xFF3AD9D3)
-private val DeepTeal = Color(0xFF0A8F8A)
-private val Gold = Color(0xFFE3C77A)
-private val GoldInk = Color(0xFF5A4A1E)
-private val Ink = Color(0xFF12302E)
-private val InkMuted = Color(0xFF6F9490)
-private val GlassLight = Color(0xFFCFF3F0)
-private val GlassMid = Color(0xFFA7E9E5)
-private val AquaBright = Color(0xFF7FE3DE)
-private val WheelInk = Color(0xFF0C3B39)
-private val PageBackground = Color(0xFFEAF3F2)
-private val CardOutline = Color(0xFFCBE2DF)
-private val DarkBackground = Color(0xFF0B1F1E)
-private val DarkSurface = Color(0xFF0F2E2C)
-private val DarkSurfaceVariant = Color(0xFF1B403D)
+// RideVibe brand palette — Tiffany blue color pass (design: ridevibe-ui-design-redesign):
+// Charcoal is the only dark anchor (bars, chrome); Tiffany is reserved for actions
+// and live data; Tiffany Soft for brand surfaces and holds; Vapour is the canvas;
+// Gold is limited to hold timers, low-seat warnings and the ticket trim.
+val Charcoal = Color(0xFF2C363F)
+val Tiffany = Color(0xFF0ABAB5)
+val TiffanySoft = Color(0xFF81D8D0)
+val Vapour = Color(0xFFF2F8F7)
+val SlateSage = Color(0xFF7C8C8B)
+val Gold = Color(0xFFE3C77A)
+val Divider = Color(0xFFDCE6E5)
+val DividerSoft = Color(0xFFEDF3F2)
+
+/** Text on Tiffany Soft surfaces (design rule; not a background token). */
+val InkOnSoft = Color(0xFF12302E)
+
+/** Unavailable seats on the seat map. */
+val SeatTaken = Color(0xFFC9D2D1)
 
 private val LightColors = lightColorScheme(
-    primary = TiffanyBlue,
+    primary = Tiffany,
     onPrimary = Color.White,
-    primaryContainer = GlassLight,
-    onPrimaryContainer = WheelInk,
-    secondary = DeepTeal,
+    primaryContainer = TiffanySoft,
+    onPrimaryContainer = InkOnSoft,
+    secondary = Tiffany,
     onSecondary = Color.White,
-    secondaryContainer = GlassMid,
-    onSecondaryContainer = WheelInk,
+    secondaryContainer = TiffanySoft,
+    onSecondaryContainer = InkOnSoft,
     tertiary = Gold,
-    onTertiary = GoldInk,
-    tertiaryContainer = Color(0xFFF6ECCB),
-    onTertiaryContainer = GoldInk,
-    background = PageBackground,
-    onBackground = Ink,
+    onTertiary = Charcoal,
+    tertiaryContainer = Gold,
+    onTertiaryContainer = Charcoal,
+    background = Vapour,
+    onBackground = Charcoal,
     surface = Color.White,
-    onSurface = Ink,
-    surfaceVariant = Color(0xFFDFEFED),
-    onSurfaceVariant = InkMuted,
-    outline = CardOutline,
-    outlineVariant = CardOutline,
+    onSurface = Charcoal,
+    surfaceVariant = Vapour,
+    onSurfaceVariant = SlateSage,
+    outline = Divider,
+    outlineVariant = DividerSoft,
+    inverseSurface = Charcoal,
+    inverseOnSurface = Color.White,
 )
 
+// Dark mode keeps the same accent roles on charcoal-derived grounds.
 private val DarkColors = darkColorScheme(
-    primary = AquaBright,
-    onPrimary = WheelInk,
-    primaryContainer = DeepTeal,
-    onPrimaryContainer = GlassLight,
-    secondary = TiffanyLight,
-    onSecondary = WheelInk,
-    secondaryContainer = Color(0xFF14524E),
-    onSecondaryContainer = GlassLight,
+    primary = Tiffany,
+    onPrimary = Color.White,
+    primaryContainer = TiffanySoft,
+    onPrimaryContainer = InkOnSoft,
+    secondary = TiffanySoft,
+    onSecondary = InkOnSoft,
+    secondaryContainer = TiffanySoft,
+    onSecondaryContainer = InkOnSoft,
     tertiary = Gold,
-    onTertiary = GoldInk,
-    tertiaryContainer = Color(0xFF4A3D18),
-    onTertiaryContainer = Color(0xFFF6ECCB),
-    background = DarkBackground,
-    onBackground = Color(0xFFE4F1EF),
-    surface = DarkSurface,
-    onSurface = Color(0xFFE4F1EF),
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = Color(0xFF8FB5B1),
-    outline = Color(0xFF2C544F),
+    onTertiary = Charcoal,
+    tertiaryContainer = Gold,
+    onTertiaryContainer = Charcoal,
+    background = Color(0xFF1D242B),
+    onBackground = Color(0xFFE7EDEF),
+    surface = Charcoal,
+    onSurface = Color(0xFFE7EDEF),
+    surfaceVariant = Color(0xFF39444E),
+    onSurfaceVariant = Color(0xFFA5B3B2),
+    outline = Color(0xFF46525C),
+    outlineVariant = Color(0xFF39444E),
+    inverseSurface = Vapour,
+    inverseOnSurface = Charcoal,
 )
 
 // Generously rounded corners throughout, per the Visily design.
@@ -81,6 +89,15 @@ private val RideVibeShapes = Shapes(
     medium = RoundedCornerShape(16.dp),
     large = RoundedCornerShape(20.dp),
     extraLarge = RoundedCornerShape(28.dp),
+)
+
+/** Charcoal chrome for center-aligned top app bars (design rule: Charcoal anchors all bars). */
+@Composable
+fun charcoalTopBarColors(): TopAppBarColors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+    containerColor = Charcoal,
+    titleContentColor = Color.White,
+    navigationIconContentColor = Color.White,
+    actionIconContentColor = Color.White,
 )
 
 @Composable

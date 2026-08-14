@@ -30,6 +30,9 @@ import androidx.compose.ui.unit.dp
 import com.ridevibe.core.domain.model.CoPassenger
 import com.ridevibe.core.domain.model.PassengerType
 
+// Charcoal chrome token mirrored from the design palette (:app theme not visible here).
+private val ChromeCharcoal = Color(0xFF2C363F)
+
 /**
  * RideVibe boarding pass card (design pages 6-7): indigo operator header,
  * high-density QR, ticket id, and the trip detail grid. [qrPayload] is a
@@ -58,11 +61,11 @@ fun DigitalTicketCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
     ) {
-        // Indigo operator header
+        // Charcoal operator header, finished with the ticket's gold trim below.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.primary)
+                .background(ChromeCharcoal)
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -97,6 +100,9 @@ fun DigitalTicketCard(
                 )
             }
         }
+
+        // Gold trim: the one sanctioned Gold accent on the ticket.
+        HorizontalDivider(thickness = 3.dp, color = MaterialTheme.colorScheme.tertiary)
 
         Column(
             modifier = Modifier.fillMaxWidth().padding(20.dp),

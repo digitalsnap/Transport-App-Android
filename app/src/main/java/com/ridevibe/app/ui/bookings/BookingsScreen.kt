@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ridevibe.app.ui.theme.charcoalTopBarColors
 import com.ridevibe.core.domain.model.PaymentStatus
 import com.ridevibe.core.domain.model.Ticket
 import java.text.SimpleDateFormat
@@ -69,6 +70,7 @@ fun BookingsScreen(
                         Icon(Icons.Filled.Person, contentDescription = "Profile")
                     }
                 },
+                colors = charcoalTopBarColors(),
             )
         },
     ) { padding ->
@@ -141,9 +143,7 @@ private fun BookingCard(ticket: Ticket, isPast: Boolean, onClick: () -> Unit) {
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isPast) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
-        ),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = if (isPast) 0.dp else 1.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -192,14 +192,14 @@ private fun StatusBadge(ticket: Ticket, isPast: Boolean) {
     val (label, container, content) = when {
         isPast -> Triple(
             "COMPLETED",
-            MaterialTheme.colorScheme.surface,
+            MaterialTheme.colorScheme.surfaceVariant,
             MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         ticket.paymentStatus == PaymentStatus.PAID -> Triple(
             "PAID",
-            MaterialTheme.colorScheme.primaryContainer,
-            MaterialTheme.colorScheme.onPrimaryContainer,
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.onPrimary,
         )
 
         else -> Triple(

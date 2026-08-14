@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.ridevibe.app.ui.theme.charcoalTopBarColors
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
@@ -97,6 +98,7 @@ fun ScanScreen(
                         Icon(Icons.Filled.Person, contentDescription = "Profile")
                     }
                 },
+                colors = charcoalTopBarColors(),
             )
         },
     ) { padding ->
