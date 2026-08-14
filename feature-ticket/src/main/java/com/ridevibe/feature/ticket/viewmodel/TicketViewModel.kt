@@ -18,12 +18,13 @@ import javax.inject.Inject
 
 data class TicketUiState(
     val isLoading: Boolean = true,
-    val ticket: Ticket? = null,
+    /** One ticket per leg — a round trip shows two (outbound then return). */
+    val tickets: List<Ticket> = emptyList(),
     /** Seconds until an unpaid reservation lapses; null when paid or no expiry. */
     val expirySecondsRemaining: Long? = null,
     val errorMessage: String? = null,
 ) {
-    val isReservation: Boolean get() = ticket?.paymentStatus == PaymentStatus.CASH_ON_BOARD
+    val isReservation: Boolean get() = tickets.any { it.paymentStatus == PaymentStatus.CASH_ON_BOARD }
 }
 
 @HiltViewModel
@@ -32,7 +33,8 @@ class TicketViewModel @Inject constructor(
     private val getTicketUseCase: GetTicketUseCase,
 ) : ViewModel() {
 
-    private val ticketId: String = checkNotNull(savedStateHandle["ticketId"])
+    private val ticketIds: List<String> =
+        checkNotNull(savedStateHandle.get<String>("ticketIds")).split(",").filter { it.isNotBlank() }
 
     private val _uiState = MutableStateFlow(TicketUiState())
     val uiState: StateFlow<TicketUiState> = _uiState.asStateFlow()
@@ -46,23 +48,30 @@ class TicketViewModel @Inject constructor(
     fun load() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            getTicketUseCase(ticketId)
-                .onSuccess { ticket ->
-                    _uiState.update { it.copy(isLoading = false, ticket = ticket) }
-                    startExpiryCountdown(ticket)
-                }
-                .onFailure { throwable ->
-                    _uiState.update {
-                        it.copy(isLoading = false, errorMessage = throwable.message ?: "Unable to load ticket")
+            val tickets = mutableListOf<Ticket>()
+            for (id in ticketIds) {
+                getTicketUseCase(id)
+                    .onSuccess { tickets += it }
+                    .onFailure { throwable ->
+                        _uiState.update {
+                            it.copy(isLoading = false, errorMessage = throwable.message ?: "Unable to load ticket")
+                        }
+                        return@launch
                     }
-                }
+            }
+            // Outbound first for round trips.
+            val sorted = tickets.sortedBy { it.trip.departureEpochMillis }
+            _uiState.update { it.copy(isLoading = false, tickets = sorted) }
+            startExpiryCountdown(sorted)
         }
     }
 
-    private fun startExpiryCountdown(ticket: Ticket) {
+    private fun startExpiryCountdown(tickets: List<Ticket>) {
         countdownJob?.cancel()
-        val expiresAt = ticket.reservationExpiresAtEpochMillis ?: return
-        if (ticket.paymentStatus != PaymentStatus.CASH_ON_BOARD) return
+        val expiresAt = tickets
+            .filter { it.paymentStatus == PaymentStatus.CASH_ON_BOARD }
+            .mapNotNull { it.reservationExpiresAtEpochMillis }
+            .minOrNull() ?: return
 
         countdownJob = viewModelScope.launch {
             while (true) {

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.ridevibe.core.domain.model.BusClass
 import com.ridevibe.core.domain.model.TerminalLocation
 import com.ridevibe.core.domain.model.TripType
+import com.ridevibe.core.domain.session.BookingCart
 import com.ridevibe.core.domain.usecase.GetSearchOptionsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,7 +43,9 @@ data class SearchFormState(
         }.joinToString(", ")
 
     val canSearch: Boolean
-        get() = origin.isNotBlank() && destination.isNotBlank() && departureDateMillis != null &&
+        get() = origin.isNotBlank() && destination.isNotBlank() &&
+            !origin.equals(destination, ignoreCase = true) && // no PITX → PITX trips
+            departureDateMillis != null &&
             seatCount >= 1 &&
             (tripType == TripType.ONE_WAY ||
                 (returnDateMillis != null && returnDateMillis >= (departureDateMillis ?: 0L)))
@@ -51,7 +54,25 @@ data class SearchFormState(
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val getSearchOptions: GetSearchOptionsUseCase,
+    private val bookingCart: BookingCart,
 ) : ViewModel() {
+
+    /** Seeds the shared cart with this search so a round trip can gather both legs. */
+    fun primeCart() {
+        val form = _formState.value
+        bookingCart.prime(
+            isRoundTrip = form.tripType == TripType.ROUND_TRIP,
+            origin = form.origin,
+            destination = form.destination,
+            departDateMillis = form.departureDateMillis ?: 0L,
+            returnDateMillis = form.returnDateMillis,
+            busClass = form.busClassFilter,
+            adults = form.adults,
+            children = form.children,
+            infants = form.infants,
+            forSelf = form.bookingForSelf,
+        )
+    }
 
     private val _formState = MutableStateFlow(SearchFormState())
     val formState: StateFlow<SearchFormState> = _formState.asStateFlow()

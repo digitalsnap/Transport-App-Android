@@ -66,6 +66,7 @@ fun ResultsScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                colors = charcoalTopBarColors(),
             )
         },
     ) { padding ->
@@ -81,6 +82,14 @@ fun ResultsScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
+                    uiState.legLabel?.let { label ->
+                        Text(
+                            label.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     Text(
                         "${uiState.origin} to ${uiState.destination}",
                         style = MaterialTheme.typography.titleSmall,
@@ -269,8 +278,9 @@ private fun TripResultCard(trip: Trip, onViewSeats: () -> Unit) {
                 Text(
                     "${trip.availableSeatCount} seats left",
                     style = MaterialTheme.typography.bodySmall,
+                    // Low-seat warnings are one of Gold's three sanctioned uses.
                     color = if (trip.availableSeatCount <= 10) {
-                        MaterialTheme.colorScheme.error
+                        MaterialTheme.colorScheme.tertiary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },

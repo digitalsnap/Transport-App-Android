@@ -8,11 +8,13 @@ import com.ridevibe.core.domain.model.PaymentStatus
 import com.ridevibe.core.domain.model.Seat
 import com.ridevibe.core.domain.model.SeatStatus
 import com.ridevibe.core.domain.model.SeatStatusEvent
+import com.ridevibe.core.domain.model.SupportMessage
 import com.ridevibe.core.domain.model.TerminalLocation
 import com.ridevibe.core.domain.model.Ticket
 import com.ridevibe.core.domain.model.Trip
 import com.ridevibe.core.domain.model.UserProfile
 import com.ridevibe.core.domain.model.Vehicle
+import com.ridevibe.core.domain.model.WalletTransaction
 import kotlinx.coroutines.flow.MutableSharedFlow
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -133,12 +135,31 @@ class MockDatabase @Inject constructor() {
     private val tickets = ConcurrentHashMap<String, Ticket>()
     private var profile: UserProfile = UserProfile()
     private val vehicles = ConcurrentHashMap<String, Vehicle>()
+    private val walletTransactions = mutableListOf<WalletTransaction>()
+    private val supportMessages = mutableListOf<SupportMessage>()
 
     /** Live seat updates, mimicking the WebSocket `seat_status_changed` channel. */
     val seatEvents = MutableSharedFlow<SeatStatusEvent>(extraBufferCapacity = 32)
 
     init {
         seedPastBookings()
+        seedWalletAndSupport()
+    }
+
+    /** Sample wallet credit + support greeting so both tabs have demo content. */
+    private fun seedWalletAndSupport() {
+        walletTransactions += WalletTransaction(
+            id = "WT-WELCOME",
+            title = "Welcome credit (sample)",
+            amountPhp = 250.0,
+            timestampEpochMillis = System.currentTimeMillis() - 40L * 86_400_000L,
+        )
+        supportMessages += SupportMessage(
+            id = "SM-GREETING",
+            text = "Hi! This is RideVibe support. How can we help you today?",
+            fromUser = false,
+            timestampEpochMillis = System.currentTimeMillis(),
+        )
     }
 
     /** Two completed sample bookings so the history section has demo content. */
@@ -272,9 +293,13 @@ class MockDatabase @Inject constructor() {
 
     fun updateSeat(tripId: String, seatId: String, status: SeatStatus, lockedBy: String?): Boolean {
         val seats = seatMaps[tripId] ?: return false
-        val index = seats.indexOfFirst { it.id == seatId }
-        if (index == -1) return false
-        seats[index] = seats[index].copy(status = status, lockedByUserId = lockedBy)
+        // Synchronized: the simulated "other passenger" coroutine and UI
+        // actions can mutate the same seat list from different dispatchers.
+        synchronized(seats) {
+            val index = seats.indexOfFirst { it.id == seatId }
+            if (index == -1) return false
+            seats[index] = seats[index].copy(status = status, lockedByUserId = lockedBy)
+        }
         seatEvents.tryEmit(
             SeatStatusEvent(tripId = tripId, seatId = seatId, status = status, lockedByUserId = lockedBy),
         )
@@ -337,6 +362,19 @@ class MockDatabase @Inject constructor() {
         )
         tickets[ticketId] = ticket
         seatIds.forEach { updateSeat(tripId, it, SeatStatus.OCCUPIED, lockedBy = null) }
+
+        // Record the payment in the wallet history (per-passenger discounts applied).
+        val discountTotal = trip.farePhp * primaryPassenger.type.discountRate +
+            coPassengers.sumOf { trip.farePhp * it.type.discountRate }
+        val paidPhp = trip.farePhp * seatLabels.size - discountTotal
+        synchronized(walletTransactions) {
+            walletTransactions += WalletTransaction(
+                id = "WT-$ticketId",
+                title = "Ticket $ticketId • ${trip.origin} → ${trip.destination}",
+                amountPhp = -paidPhp,
+                timestampEpochMillis = System.currentTimeMillis(),
+            )
+        }
         return ticket
     }
 
@@ -364,5 +402,23 @@ class MockDatabase @Inject constructor() {
 
     fun removeVehicle(vehicleId: String) {
         vehicles.remove(vehicleId)
+    }
+
+    // ── Wallet & support ────────────────────────────────────────────────────
+
+    fun walletTransactions(): List<WalletTransaction> = synchronized(walletTransactions) {
+        walletTransactions.sortedByDescending { it.timestampEpochMillis }
+    }
+
+    fun walletBalancePhp(): Double = synchronized(walletTransactions) {
+        walletTransactions.sumOf { it.amountPhp }
+    }
+
+    fun supportMessages(): List<SupportMessage> = synchronized(supportMessages) {
+        supportMessages.toList()
+    }
+
+    fun addSupportMessage(message: SupportMessage) {
+        synchronized(supportMessages) { supportMessages += message }
     }
 }

@@ -14,6 +14,10 @@ android {
         minSdk = 24
     }
 
+    buildFeatures {
+        buildConfig = true // BuildConfig.DEBUG gates the HTTP logging interceptor
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

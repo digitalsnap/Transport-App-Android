@@ -7,9 +7,9 @@ import com.ridevibe.core.domain.model.CoPassenger
 import com.ridevibe.core.domain.model.Passenger
 import com.ridevibe.core.domain.model.PassengerType
 import com.ridevibe.core.domain.model.PaymentMethod
-import com.ridevibe.core.domain.model.Ticket
 import com.ridevibe.core.domain.model.Trip
 import com.ridevibe.core.domain.repository.ProfileRepository
+import com.ridevibe.core.domain.session.BookingCart
 import com.ridevibe.core.domain.usecase.ConfirmBookingUseCase
 import com.ridevibe.core.domain.usecase.GetTripUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -35,6 +35,12 @@ data class CoPassengerForm(
 data class CheckoutUiState(
     val trip: Trip? = null,
     val seatIds: List<String> = emptyList(),
+    /** Round trip only: the return leg collected by the booking cart. */
+    val returnTrip: Trip? = null,
+    val returnSeatIds: List<String> = emptyList(),
+    /** True when the cart holds a return leg that MUST load before paying —
+     *  prevents silently charging for the outbound leg alone. */
+    val expectsReturnLeg: Boolean = false,
     val infantCount: Int = 0,
     /** True when the account owner is the primary traveler. */
     val bookingForSelf: Boolean = true,
@@ -53,9 +59,11 @@ data class CheckoutUiState(
     val paymentMethod: PaymentMethod = PaymentMethod.GCASH,
     val promoCode: String = "",
     val isSubmitting: Boolean = false,
-    val confirmedTicket: Ticket? = null,
+    /** CSV of confirmed ticket ids (two entries for a round trip). */
+    val confirmedTicketIds: String? = null,
     val errorMessage: String? = null,
 ) {
+    val isRoundTrip: Boolean get() = returnTrip != null
     /** Account profile usable as the primary passenger identity. */
     val useAccountAsPrimary: Boolean get() = bookingForSelf && accountName.isNotBlank()
 
@@ -66,12 +74,16 @@ data class CheckoutUiState(
 
     val seatCount: Int get() = seatIds.size
     val farePerSeat: Double get() = trip?.farePhp ?: 0.0
-    val baseFarePhp: Double get() = farePerSeat * seatCount
+    val returnFarePerSeat: Double get() = returnTrip?.farePhp ?: 0.0
+    val outboundBasePhp: Double get() = farePerSeat * seatCount
+    val returnBasePhp: Double get() = returnFarePerSeat * returnSeatIds.size
+    val baseFarePhp: Double get() = outboundBasePhp + returnBasePhp
 
-    /** Every discounted passenger gets 20% off their own seat. */
+    /** Every discounted passenger gets 20% off their own seat, on each leg. */
+    private val farePerSeatBothLegs: Double get() = farePerSeat + returnFarePerSeat
     val discountPhp: Double
-        get() = farePerSeat * passengerType.discountRate +
-            coPassengers.sumOf { farePerSeat * it.type.discountRate }
+        get() = farePerSeatBothLegs * passengerType.discountRate +
+            coPassengers.sumOf { farePerSeatBothLegs * it.type.discountRate }
 
     val discountedPassengerCount: Int
         get() = (if (passengerType.requiresIdCapture) 1 else 0) +
@@ -80,6 +92,7 @@ data class CheckoutUiState(
     val totalPhp: Double get() = baseFarePhp - discountPhp
 
     val canSubmit: Boolean get() = trip != null &&
+        (!expectsReturnLeg || returnTrip != null) &&
         (useAccountAsPrimary || (primaryFirstName.isNotBlank() && primaryLastName.isNotBlank())) &&
         (!requiresIdCapture || discountIdImagePath != null) &&
         coPassengers.all { it.isComplete }
@@ -91,6 +104,7 @@ class CheckoutViewModel @Inject constructor(
     private val getTripUseCase: GetTripUseCase,
     private val profileRepository: ProfileRepository,
     private val confirmBookingUseCase: ConfirmBookingUseCase,
+    private val bookingCart: BookingCart,
 ) : ViewModel() {
 
     private val tripId: String = checkNotNull(savedStateHandle["tripId"])
@@ -105,6 +119,7 @@ class CheckoutViewModel @Inject constructor(
             seatIds = seatIds,
             infantCount = infantCount,
             bookingForSelf = bookingForSelf,
+            expectsReturnLeg = bookingCart.isRoundTrip && bookingCart.returnTripId != null,
             coPassengers = List((seatIds.size - 1).coerceAtLeast(0)) { CoPassengerForm() },
         ),
     )
@@ -117,6 +132,23 @@ class CheckoutViewModel @Inject constructor(
                 .onFailure { throwable ->
                     _uiState.update { it.copy(errorMessage = throwable.message ?: "Unable to load trip details") }
                 }
+        }
+        // Round trip: the return leg selection was collected by the cart.
+        val returnTripId = bookingCart.returnTripId
+        if (bookingCart.isRoundTrip && returnTripId != null) {
+            viewModelScope.launch {
+                getTripUseCase(returnTripId)
+                    .onSuccess { trip ->
+                        _uiState.update {
+                            it.copy(returnTrip = trip, returnSeatIds = bookingCart.returnSeatIds)
+                        }
+                    }
+                    .onFailure { throwable ->
+                        _uiState.update {
+                            it.copy(errorMessage = throwable.message ?: "Unable to load return trip")
+                        }
+                    }
+            }
         }
         viewModelScope.launch {
             val profile = profileRepository.getProfile()
@@ -199,7 +231,7 @@ class CheckoutViewModel @Inject constructor(
                     discountIdImagePath = it.discountIdImagePath,
                 )
             }
-            confirmBookingUseCase(
+            val outboundResult = confirmBookingUseCase(
                 tripId = tripId,
                 seatIds = state.seatIds,
                 primaryPassenger = primary,
@@ -208,12 +240,48 @@ class CheckoutViewModel @Inject constructor(
                 paymentMethod = state.paymentMethod,
                 promoCode = state.promoCode,
             )
-                .onSuccess { ticket -> _uiState.update { it.copy(isSubmitting = false, confirmedTicket = ticket) } }
-                .onFailure { throwable ->
-                    _uiState.update {
-                        it.copy(isSubmitting = false, errorMessage = throwable.message ?: "Booking failed")
-                    }
+            val outboundTicket = outboundResult.getOrElse { throwable ->
+                _uiState.update {
+                    it.copy(isSubmitting = false, errorMessage = throwable.message ?: "Booking failed")
                 }
+                return@launch
+            }
+
+            val returnTrip = state.returnTrip
+            if (returnTrip != null) {
+                val returnResult = confirmBookingUseCase(
+                    tripId = returnTrip.id,
+                    seatIds = state.returnSeatIds,
+                    primaryPassenger = primary,
+                    coPassengers = coPassengers,
+                    infantCount = state.infantCount,
+                    paymentMethod = state.paymentMethod,
+                    promoCode = state.promoCode,
+                )
+                returnResult
+                    .onSuccess { returnTicket ->
+                        bookingCart.reset()
+                        _uiState.update {
+                            it.copy(
+                                isSubmitting = false,
+                                confirmedTicketIds = "${outboundTicket.id},${returnTicket.id}",
+                            )
+                        }
+                    }
+                    .onFailure { throwable ->
+                        _uiState.update {
+                            it.copy(
+                                isSubmitting = false,
+                                errorMessage = "Outbound booked (${outboundTicket.id}) but the return " +
+                                    "leg failed: ${throwable.message}",
+                                confirmedTicketIds = outboundTicket.id,
+                            )
+                        }
+                    }
+            } else {
+                bookingCart.reset()
+                _uiState.update { it.copy(isSubmitting = false, confirmedTicketIds = outboundTicket.id) }
+            }
         }
     }
 }

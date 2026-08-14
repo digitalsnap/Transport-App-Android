@@ -11,12 +11,17 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.ridevibe.app.ui.bookings.BookingsScreen
+import com.ridevibe.app.ui.chat.ChatScreen
+import com.ridevibe.app.ui.chat.SupportScreen
 import com.ridevibe.app.ui.components.BottomTab
 import com.ridevibe.app.ui.components.RideVibeBottomNav
 import com.ridevibe.app.ui.profile.ProfileScreen
+import com.ridevibe.app.ui.scan.ScanScreen
+import com.ridevibe.app.ui.wallet.WalletScreen
 import com.ridevibe.app.ui.welcome.WelcomeScreen
 import com.ridevibe.core.domain.model.BusClass
 import com.ridevibe.feature.checkout.ui.CheckoutScreen
@@ -30,10 +35,17 @@ private object Routes {
     const val HOME = "home"
     const val PROFILE = "profile"
     const val BOOKINGS = "bookings"
-    const val RESULTS = "results/{origin}/{destination}/{dateMillis}/{busClass}/{adults}/{children}/{infants}/{forSelf}"
-    const val SEAT_MAP = "trips/{tripId}/seatmap/{seatCount}/{infants}/{forSelf}"
+    const val SCAN = "scan"
+    const val WALLET = "wallet"
+
+    // Support: the Chat tab lands on topic triage; the live thread is a
+    // separate destination that carries the chosen topic + booking context.
+    const val CHAT = "chat"
+    const val CHAT_THREAD = "chat/thread?topic={topic}&booking={booking}"
+    const val RESULTS = "results/{origin}/{destination}/{dateMillis}/{busClass}/{adults}/{children}/{infants}/{forSelf}/{leg}"
+    const val SEAT_MAP = "trips/{tripId}/seatmap/{seatCount}/{infants}/{forSelf}/{leg}"
     const val CHECKOUT = "trips/{tripId}/checkout/{seats}/{infants}/{forSelf}"
-    const val TICKET = "tickets/{ticketId}"
+    const val TICKET = "tickets/{ticketIds}"
 
     fun results(
         origin: String,
@@ -44,20 +56,25 @@ private object Routes {
         children: Int,
         infants: Int,
         forSelf: Boolean,
+        leg: String,
     ) = "results/${Uri.encode(origin)}/${Uri.encode(destination)}/$dateMillis/" +
-        "${busClass?.name ?: "ANY"}/$adults/$children/$infants/$forSelf"
+        "${busClass?.name ?: "ANY"}/$adults/$children/$infants/$forSelf/$leg"
 
-    fun seatMap(tripId: String, seatCount: Int, infants: Int, forSelf: Boolean) =
-        "trips/${Uri.encode(tripId)}/seatmap/$seatCount/$infants/$forSelf"
+    fun seatMap(tripId: String, seatCount: Int, infants: Int, forSelf: Boolean, leg: String) =
+        "trips/${Uri.encode(tripId)}/seatmap/$seatCount/$infants/$forSelf/$leg"
 
     fun checkout(tripId: String, seatIdsCsv: String, infants: Int, forSelf: Boolean) =
         "trips/${Uri.encode(tripId)}/checkout/${Uri.encode(seatIdsCsv)}/$infants/$forSelf"
 
-    fun ticket(ticketId: String) = "tickets/${Uri.encode(ticketId)}"
+    fun ticket(ticketIds: String) = "tickets/${Uri.encode(ticketIds)}"
+
+    fun chatThread(topic: String?, bookingLabel: String?) =
+        "chat/thread?topic=${Uri.encode(topic.orEmpty())}&booking=${Uri.encode(bookingLabel.orEmpty())}"
 }
 
 @Composable
 fun RideVibeNavGraph(navController: NavHostController) {
+    val cart = hiltViewModel<CartViewModel>().cart
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
@@ -66,8 +83,17 @@ fun RideVibeNavGraph(navController: NavHostController) {
     val selectedTab = when (currentRoute) {
         Routes.HOME -> BottomTab.HOME
         Routes.BOOKINGS -> BottomTab.BOOKINGS
-        Routes.PROFILE -> BottomTab.PROFILE
+        Routes.SCAN -> BottomTab.SCAN
+        Routes.WALLET -> BottomTab.WALLET
+        Routes.CHAT, Routes.CHAT_THREAD -> BottomTab.CHAT
         else -> null
+    }
+
+    fun navigateToTab(route: String) {
+        navController.navigate(route) {
+            popUpTo(Routes.HOME) { inclusive = route == Routes.HOME }
+            launchSingleTop = true
+        }
     }
 
     Scaffold(
@@ -82,18 +108,10 @@ fun RideVibeNavGraph(navController: NavHostController) {
                             launchSingleTop = true
                         }
                     },
-                    onBookingsClick = {
-                        navController.navigate(Routes.BOOKINGS) {
-                            popUpTo(Routes.HOME)
-                            launchSingleTop = true
-                        }
-                    },
-                    onProfileClick = {
-                        navController.navigate(Routes.PROFILE) {
-                            popUpTo(Routes.HOME)
-                            launchSingleTop = true
-                        }
-                    },
+                    onBookingsClick = { navigateToTab(Routes.BOOKINGS) },
+                    onScanClick = { navigateToTab(Routes.SCAN) },
+                    onWalletClick = { navigateToTab(Routes.WALLET) },
+                    onChatClick = { navigateToTab(Routes.CHAT) },
                 )
             }
         },
@@ -117,10 +135,51 @@ fun RideVibeNavGraph(navController: NavHostController) {
         composable(Routes.HOME) {
             HomeScreen(
                 onSearch = { origin, destination, dateMillis, busClass, adults, children, infants, forSelf ->
+                    val leg = if (cart.isRoundTrip) "OUT" else "ONE"
                     navController.navigate(
-                        Routes.results(origin, destination, dateMillis, busClass, adults, children, infants, forSelf),
+                        Routes.results(origin, destination, dateMillis, busClass, adults, children, infants, forSelf, leg),
                     )
                 },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
+            )
+        }
+
+        composable(Routes.SCAN) {
+            ScanScreen(
+                onBack = { navController.popBackStack() },
+                onOpenTicket = { ticketId -> navController.navigate(Routes.ticket(ticketId)) },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
+            )
+        }
+
+        composable(Routes.WALLET) {
+            WalletScreen(
+                onBack = { navController.popBackStack() },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
+            )
+        }
+
+        composable(Routes.CHAT) {
+            SupportScreen(
+                onBack = { navController.popBackStack() },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
+                onTopicSelected = { topic, bookingLabel ->
+                    navController.navigate(Routes.chatThread(topic, bookingLabel))
+                },
+                onChatNow = { navController.navigate(Routes.chatThread(topic = null, bookingLabel = null)) },
+            )
+        }
+
+        composable(
+            route = Routes.CHAT_THREAD,
+            arguments = listOf(
+                navArgument("topic") { type = NavType.StringType; defaultValue = "" },
+                navArgument("booking") { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) {
+            ChatScreen(
+                onBack = { navController.popBackStack() },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
             )
         }
 
@@ -128,6 +187,7 @@ fun RideVibeNavGraph(navController: NavHostController) {
             BookingsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenTicket = { ticketId -> navController.navigate(Routes.ticket(ticketId)) },
+                onProfileClick = { navController.navigate(Routes.PROFILE) },
             )
         }
 
@@ -146,6 +206,7 @@ fun RideVibeNavGraph(navController: NavHostController) {
                 navArgument("children") { type = NavType.StringType },
                 navArgument("infants") { type = NavType.StringType },
                 navArgument("forSelf") { type = NavType.StringType },
+                navArgument("leg") { type = NavType.StringType },
             ),
         ) { backStackEntry ->
             val args = backStackEntry.arguments
@@ -153,10 +214,11 @@ fun RideVibeNavGraph(navController: NavHostController) {
                 (args?.getString("children")?.toIntOrNull() ?: 0)).coerceAtLeast(1)
             val infants = args?.getString("infants")?.toIntOrNull() ?: 0
             val forSelf = args?.getString("forSelf")?.toBooleanStrictOrNull() ?: true
+            val leg = args?.getString("leg") ?: "ONE"
             ResultsScreen(
                 onBack = { navController.popBackStack() },
                 onViewSeats = { tripId ->
-                    navController.navigate(Routes.seatMap(tripId, seatCount, infants, forSelf))
+                    navController.navigate(Routes.seatMap(tripId, seatCount, infants, forSelf, leg))
                 },
             )
         }
@@ -168,15 +230,47 @@ fun RideVibeNavGraph(navController: NavHostController) {
                 navArgument("seatCount") { type = NavType.StringType },
                 navArgument("infants") { type = NavType.StringType },
                 navArgument("forSelf") { type = NavType.StringType },
+                navArgument("leg") { type = NavType.StringType },
             ),
         ) { backStackEntry ->
             val tripId = backStackEntry.arguments?.getString("tripId").orEmpty()
             val infants = backStackEntry.arguments?.getString("infants")?.toIntOrNull() ?: 0
             val forSelf = backStackEntry.arguments?.getString("forSelf")?.toBooleanStrictOrNull() ?: true
+            val leg = backStackEntry.arguments?.getString("leg") ?: "ONE"
             SeatMapScreen(
                 onBack = { navController.popBackStack() },
                 onProceedToCheckout = { seatIdsCsv ->
-                    navController.navigate(Routes.checkout(tripId, seatIdsCsv, infants, forSelf))
+                    when {
+                        // Round trip, outbound chosen: collect it, then search the return leg.
+                        leg == "OUT" && cart.isRoundTrip -> {
+                            cart.outboundTripId = tripId
+                            cart.outboundSeatIds = seatIdsCsv.split(",")
+                            navController.navigate(
+                                Routes.results(
+                                    origin = cart.destination,
+                                    destination = cart.origin,
+                                    dateMillis = cart.returnDateMillis ?: cart.departDateMillis,
+                                    busClass = cart.busClass,
+                                    adults = cart.adults,
+                                    children = cart.children,
+                                    infants = cart.infants,
+                                    forSelf = cart.forSelf,
+                                    leg = "RET",
+                                ),
+                            )
+                        }
+
+                        // Return leg chosen: both legs in the cart, one itemized checkout.
+                        leg == "RET" -> {
+                            cart.returnTripId = tripId
+                            cart.returnSeatIds = seatIdsCsv.split(",")
+                            val outTripId = cart.outboundTripId ?: tripId
+                            val outSeats = cart.outboundSeatIds.joinToString(",").ifBlank { seatIdsCsv }
+                            navController.navigate(Routes.checkout(outTripId, outSeats, infants, forSelf))
+                        }
+
+                        else -> navController.navigate(Routes.checkout(tripId, seatIdsCsv, infants, forSelf))
+                    }
                 },
             )
         }
@@ -192,8 +286,8 @@ fun RideVibeNavGraph(navController: NavHostController) {
         ) {
             CheckoutScreen(
                 onClose = { navController.popBackStack() },
-                onBookingConfirmed = { ticketId ->
-                    navController.navigate(Routes.ticket(ticketId)) {
+                onBookingConfirmed = { ticketIdsCsv ->
+                    navController.navigate(Routes.ticket(ticketIdsCsv)) {
                         popUpTo(Routes.HOME)
                     }
                 },
@@ -202,7 +296,7 @@ fun RideVibeNavGraph(navController: NavHostController) {
 
         composable(
             route = Routes.TICKET,
-            arguments = listOf(navArgument("ticketId") { type = NavType.StringType }),
+            arguments = listOf(navArgument("ticketIds") { type = NavType.StringType }),
         ) {
             TicketScreen(
                 onBackToHome = {

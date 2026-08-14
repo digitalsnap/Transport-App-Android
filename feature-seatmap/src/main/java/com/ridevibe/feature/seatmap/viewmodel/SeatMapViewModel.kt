@@ -12,7 +12,10 @@ import com.ridevibe.core.domain.usecase.ReleaseSeatUseCase
 import com.ridevibe.core.domain.usecase.SelectSeatUseCase
 import com.ridevibe.core.domain.usecase.applySeatEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -177,6 +180,17 @@ class SeatMapViewModel @Inject constructor(
 
     override fun onCleared() {
         holdCountdownJob?.cancel()
+        // Screen popped without completing checkout: give held seats back so
+        // they aren't locked forever. The repository ignores this for seats
+        // that were meanwhile booked (OCCUPIED) or locked by someone else,
+        // so it is safe to fire after a successful booking too.
+        // viewModelScope is already cancelled here, hence the one-shot scope.
+        val held = _uiState.value.selectedSeatIds
+        if (held.isNotEmpty()) {
+            CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+                held.forEach { releaseSeatUseCase(tripId, it) }
+            }
+        }
         super.onCleared()
     }
 }

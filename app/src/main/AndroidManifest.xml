@@ -3,11 +3,16 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Read the device owner's contact card to prefill the profile phone number.
+         Requested at runtime with a rationale; manual entry works if denied. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- allowBackup=false: booking/session data must not land in device
+         backups; revisit with explicit backup rules once accounts exist. -->
     <application
         android:name=".RideVibeApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@drawable/ic_ridevibe_logo"
         android:label="@string/app_name"
         android:theme="@style/Theme.RideVibe"

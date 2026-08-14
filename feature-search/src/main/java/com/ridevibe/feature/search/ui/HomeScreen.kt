@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Group
@@ -36,7 +37,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -48,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,10 +66,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ridevibe.core.domain.model.BusClass
@@ -94,6 +92,7 @@ fun HomeScreen(
         infants: Int,
         bookingForSelf: Boolean,
     ) -> Unit,
+    onProfileClick: () -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val form by viewModel.formState.collectAsState()
@@ -146,18 +145,51 @@ fun HomeScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    // Two-tone wordmark per the brand sheet: Ride (ink) + Vibe (Tiffany).
-                    Text(
-                        buildAnnotatedString {
-                            append("Ride")
-                            withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("Vibe") }
-                        },
-                        fontWeight = FontWeight.Bold,
-                    )
-                },
-            )
+            // Search-first header on Charcoal chrome: tapping the bar opens the
+            // destination picker (predictive search); profile lives top-right.
+            Surface(color = ChromeCharcoal) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { locationPickerTarget = LocationTarget.TO },
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Filled.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                if (form.destination.isBlank()) "Search trips" else form.destination,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (form.destination.isBlank()) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                modifier = Modifier.padding(start = 10.dp),
+                            )
+                        }
+                    }
+                    IconButton(onClick = onProfileClick) {
+                        Icon(
+                            Icons.Filled.AccountCircle,
+                            contentDescription = "Profile",
+                            tint = ChromeTiffanySoft,
+                            modifier = Modifier.size(32.dp),
+                        )
+                    }
+                }
+            }
         },
     ) { padding ->
         Column(
@@ -187,6 +219,7 @@ fun HomeScreen(
                 onPickPassengers = { showPassengerDialog = true },
                 onBookingForSelfChanged = viewModel::onBookingForSelfChanged,
                 onSearch = {
+                    viewModel.primeCart()
                     onSearch(
                         form.origin,
                         form.destination,
@@ -589,7 +622,15 @@ private fun CounterRow(
 
 @Composable
 private fun DateDialog(initial: Long?, onPicked: (Long) -> Unit, onDismiss: () -> Unit) {
-    val state = rememberDatePickerState(initialSelectedDateMillis = initial)
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = initial,
+        selectableDates = object : SelectableDates {
+            // Block past dates. The picker works in UTC-midnight millis, so a
+            // one-day grace window keeps "today" selectable in UTC+8 (PH time).
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                utcTimeMillis >= System.currentTimeMillis() - 86_400_000L
+        },
+    )
     DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -718,7 +759,7 @@ private fun DealSlide(deal: DemoDeal) {
                 deal.priceLine,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFFFD8A8),
+                color = ChromeTiffanySoft,
             )
         }
     }
@@ -736,7 +777,7 @@ private fun InviteFriendsCard() {
                     "Invite Friends",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(

@@ -16,14 +16,18 @@ import javax.inject.Inject
 data class ProfileUiState(
     val profile: UserProfile = UserProfile(),
     val vehicles: List<Vehicle> = emptyList(),
+    /** True once the saved profile has been read; gates the contacts auto-fill prompt. */
+    val isLoaded: Boolean = false,
     val isSaving: Boolean = false,
     val savedMessage: String? = null,
+    /** True when the phone number was auto-filled from the device contact card. */
+    val phoneFromContacts: Boolean = false,
     // "Add a Vehicle" form
     val newPlateNumber: String = "",
     val newCertificateUri: String? = null,
     val vehicleError: String? = null,
 ) {
-    val canSaveProfile: Boolean get() = profile.fullName.isNotBlank() && !isSaving
+    val canSaveProfile: Boolean get() = profile.firstName.isNotBlank() && !isSaving
     val canAddVehicle: Boolean get() = newPlateNumber.isNotBlank() && newCertificateUri != null
 }
 
@@ -41,12 +45,27 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             val profile = profileRepository.getProfile()
             val vehicles = profileRepository.getVehicles()
-            _uiState.update { it.copy(profile = profile, vehicles = vehicles) }
+            _uiState.update { it.copy(profile = profile, vehicles = vehicles, isLoaded = true) }
         }
     }
 
     fun onProfileFieldChanged(transform: (UserProfile) -> UserProfile) {
         _uiState.update { it.copy(profile = transform(it.profile), savedMessage = null) }
+    }
+
+    /** Manual phone edits clear the "from contacts" provenance badge. */
+    fun onPhoneEdited(value: String) {
+        _uiState.update {
+            it.copy(profile = it.profile.copy(mobileNumber = value), phoneFromContacts = false, savedMessage = null)
+        }
+    }
+
+    /** Called when the device contact card supplied the phone number. */
+    fun onPhoneAutoFilled(number: String) {
+        if (number.isBlank()) return
+        _uiState.update {
+            it.copy(profile = it.profile.copy(mobileNumber = number), phoneFromContacts = true)
+        }
     }
 
     fun saveProfile() {

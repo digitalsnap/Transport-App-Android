@@ -23,6 +23,8 @@ data class ResultsUiState(
     val adults: Int = 1,
     val children: Int = 0,
     val infants: Int = 0,
+    /** "ONE" (one-way), "OUT" (round-trip outbound leg), "RET" (return leg). */
+    val leg: String = "ONE",
     val sortOption: SortOption = SortOption.RECOMMENDED,
     val isLoading: Boolean = true,
     val results: List<Trip> = emptyList(),
@@ -33,6 +35,13 @@ data class ResultsUiState(
     val passengerSummary: String
         get() = "$seatCount Passenger${if (seatCount == 1) "" else "s"}" +
             if (infants > 0) " + $infants infant${if (infants == 1) "" else "s"}" else ""
+
+    val legLabel: String?
+        get() = when (leg) {
+            "OUT" -> "Outbound leg"
+            "RET" -> "Return leg"
+            else -> null
+        }
 
     val sortedResults: List<Trip>
         get() = when (sortOption) {
@@ -57,6 +66,7 @@ class ResultsViewModel @Inject constructor(
     private val adults: Int = savedStateHandle.get<String>("adults")?.toIntOrNull() ?: 1
     private val children: Int = savedStateHandle.get<String>("children")?.toIntOrNull() ?: 0
     private val infants: Int = savedStateHandle.get<String>("infants")?.toIntOrNull() ?: 0
+    private val leg: String = savedStateHandle.get<String>("leg") ?: "ONE"
 
     private val _uiState = MutableStateFlow(
         ResultsUiState(
@@ -66,6 +76,7 @@ class ResultsViewModel @Inject constructor(
             adults = adults,
             children = children,
             infants = infants,
+            leg = leg,
         ),
     )
     val uiState: StateFlow<ResultsUiState> = _uiState.asStateFlow()
