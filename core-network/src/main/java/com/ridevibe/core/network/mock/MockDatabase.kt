@@ -230,6 +230,19 @@ class MockDatabase @Inject constructor() {
             RouteService("HM Transport P2P", BusClass.ORDINARY, 120.0, 4.1, listOf(5, 7, 9, 11, 13, 15, 17), 90),
         )
 
+        // ── Through-buses on the RoRo nautical highways ─────────────────────
+        // One ticket: the bus boards the ferries with its passengers, so no
+        // separate RoRo tickets or transfers are needed.
+        route(
+            "Pasay", "Surigao",
+            RouteService("Philtranco", BusClass.ORDINARY, 2600.0, 4.3, listOf(13), 1800),
+            RouteService("Philtranco Deluxe", BusClass.DELUXE, 2950.0, 4.4, listOf(15), 1740),
+        )
+        route(
+            "PITX", "Caticlan",
+            RouteService("Philtranco", BusClass.ORDINARY, 1300.0, 4.2, listOf(15, 17), 720),
+        )
+
         // ── Tourist overland chain: Bicol → Samar → Leyte → Surigao ─────────
         route(
             "Legazpi", "Matnog Port",
@@ -477,24 +490,23 @@ class MockDatabase @Inject constructor() {
     // Multi-leg routes travellers ask for but can't be expected to assemble
     // themselves. Keywords match the search query (destination-side).
     private val journeySeeds: List<Pair<List<String>, Journey>> = listOf(
+        // Direct options lead: through-buses ride the RoRo ferries with their
+        // passengers on a single ticket — no DIY leg-by-leg chains.
         listOf("siargao", "dapa", "surigao") to Journey(
-            title = "Overland via Bicol, Samar & Leyte",
+            title = "Direct through-bus + island hop",
             from = "Manila (NAIA)",
             to = "Siargao (Dapa)",
             legs = listOf(
                 JourneyLeg(
-                    RideKind.BUS, "Pasay", "Legazpi", 720, 1100.0,
-                    note = "From NAIA, take a Grab/taxi to the Pasay terminals (~30 min)",
+                    RideKind.BUS, "Pasay", "Surigao", 1800, 2600.0,
+                    note = "One ticket — the bus rides the RoRo ferries with you " +
+                        "(Matnog–Allen and Liloan–Lipata), meal stops included. " +
+                        "From NAIA, Grab/taxi to the Pasay terminals (~30 min)",
                 ),
-                JourneyLeg(RideKind.BUS, "Legazpi", "Matnog Port", 210, 250.0),
-                JourneyLeg(RideKind.FERRY, "Matnog Port", "Allen", 90, 250.0),
-                JourneyLeg(RideKind.BUS, "Allen", "Tacloban Terminal", 240, 350.0),
-                JourneyLeg(RideKind.BUS, "Tacloban Terminal", "Liloan Port", 210, 300.0),
                 JourneyLeg(
-                    RideKind.FERRY, "Liloan Port", "Lipata Port", 150, 350.0,
-                    note = "Lipata is in Surigao City — tricycle to the boulevard port (~15 min)",
+                    RideKind.FASTCRAFT, "Surigao Port", "Dapa Port (Siargao)", 150, 350.0,
+                    note = "Tricycle from the bus terminal to Surigao boulevard port (~10 min)",
                 ),
-                JourneyLeg(RideKind.FASTCRAFT, "Surigao Port", "Dapa Port (Siargao)", 150, 350.0),
             ),
         ),
         listOf("siargao", "dapa") to Journey(
@@ -509,6 +521,18 @@ class MockDatabase @Inject constructor() {
                 JourneyLeg(
                     RideKind.FERRY, "Cebu Port", "Dapa Port (Siargao)", 600, 1100.0,
                     note = "Overnight sailing — arrives Dapa early morning",
+                ),
+            ),
+        ),
+        listOf("boracay", "caticlan") to Journey(
+            title = "Direct through-bus via the Nautical Highway",
+            from = "Manila (NAIA)",
+            to = "Boracay (Caticlan)",
+            legs = listOf(
+                JourneyLeg(
+                    RideKind.BUS, "PITX", "Caticlan", 720, 1300.0,
+                    note = "One ticket — RoRo crossings via Mindoro included. From NAIA, " +
+                        "Grab/taxi to PITX (~20 min); short boat transfer to Boracay at Caticlan jetty",
                 ),
             ),
         ),
@@ -565,6 +589,39 @@ class MockDatabase @Inject constructor() {
             .filter { (keywords, _) -> keywords.any { query.contains(it) || it.contains(query) } }
             .map { it.second }
     }
+
+    // ── Workbook merge ──────────────────────────────────────────────────────
+    // Curated seeds + corridors generated from the 2026 research workbook
+    // (XlsxSeedData.kt). Generated fares take their place beside curated ones;
+    // duplicates (same operator/class/fare) collapse. Both directions register.
+
+    private fun mergeRoutes(
+        curated: Map<Pair<String, String>, List<RouteService>>,
+        generated: Map<Pair<String, String>, List<XlsxService>>,
+    ): Map<Pair<String, String>, List<RouteService>> = buildMap {
+        putAll(curated)
+        generated.forEach { (key, services) ->
+            val converted = services.map {
+                RouteService(
+                    operatorName = it.operatorName,
+                    busClass = it.busClass,
+                    farePhp = it.farePhp,
+                    rating = 4.2, // workbook carries no ratings
+                    departureHours = it.departureHours,
+                    durationMinutes = it.durationMinutes,
+                    kind = it.kind,
+                )
+            }
+            listOf(key, key.second to key.first).forEach { direction ->
+                val combined = (this[direction].orEmpty() + converted)
+                    .distinctBy { Triple(it.operatorName, it.busClass, it.farePhp) }
+                put(direction, combined)
+            }
+        }
+    }
+
+    private val allBusRoutes by lazy { mergeRoutes(routeServices, xlsxBusRoutes) }
+    private val allSeaRoutes by lazy { mergeRoutes(seaRouteServices, xlsxSeaRoutes) }
 
     /** Fallback services so ANY searched route still returns demo inventory. */
     private val fallbackServices = listOf(
@@ -665,7 +722,7 @@ class MockDatabase @Inject constructor() {
     /** Hub registry first (central terminals up top), then route endpoints not already covered. */
     fun locations(): List<TerminalLocation> {
         val hubNames = hubs.map { it.name }.toSet()
-        val routeCities = (routeServices.keys + seaRouteServices.keys)
+        val routeCities = (allBusRoutes.keys + allSeaRoutes.keys)
             .flatMap { listOf(it.first, it.second) }
             .toSortedSet()
             .filterNot { it in hubNames }
@@ -684,11 +741,12 @@ class MockDatabase @Inject constructor() {
             .firstOrNull { (route, _) -> normalize(route.first) == key.first && normalize(route.second) == key.second }
             ?.value
         // Land corridors first, then sea lanes; unknown pairs get demo inventory.
-        val services = routeServices.lookup() ?: seaRouteServices.lookup() ?: fallbackServices
+        val services = allBusRoutes.lookup() ?: allSeaRoutes.lookup() ?: fallbackServices
 
         return services
             .filter { busClass == null || it.busClass == busClass }
             .flatMap { service -> generateTrips(origin, destination, dateMillis, service) }
+            .distinctBy { it.id }
             .sortedBy { it.departureEpochMillis }
     }
 
@@ -718,12 +776,12 @@ class MockDatabase @Inject constructor() {
             busEndpoint: (Pair<String, String>) -> String,
             seaEndpoint: (Pair<String, String>) -> String,
         ): List<Trip> {
-            val bus = routeServices.entries
+            val bus = allBusRoutes.entries
                 .filter { (route, _) -> matches(busEndpoint(route)) }
                 .flatMap { (route, services) ->
                     services.flatMap { generateTrips(route.first, route.second, date, it) }
                 }
-            val sea = seaRouteServices.entries
+            val sea = allSeaRoutes.entries
                 .filter { (route, _) -> matches(seaEndpoint(route)) }
                 .flatMap { (route, services) ->
                     services.flatMap { generateTrips(route.first, route.second, date, it) }
@@ -739,7 +797,7 @@ class MockDatabase @Inject constructor() {
             generateFor(date, busEndpoint = { it.first }, seaEndpoint = { it.second })
         }.orEmpty()
 
-        return (outbound + returnLeg).sortedBy { it.departureEpochMillis }
+        return (outbound + returnLeg).distinctBy { it.id }.sortedBy { it.departureEpochMillis }
     }
 
     private fun generateTrips(
@@ -751,7 +809,12 @@ class MockDatabase @Inject constructor() {
         val dayStart = dateMillis - (dateMillis % 86_400_000L)
         return service.departureHours.map { hour ->
             val departure = dayStart + hour * 3_600_000L
-            val id = "TRIP-${(origin + destination + service.operatorName + departure).hashCode().toUInt()}"
+            // Class and fare are part of the identity: one operator can run several
+            // classes on the same corridor at the same hour (e.g. Semi/Super Deluxe).
+            val id = "TRIP-${
+                (origin + destination + service.operatorName + service.busClass.name +
+                    service.farePhp + departure).hashCode().toUInt()
+            }"
             val trip = Trip(
                 id = id,
                 operatorName = service.operatorName,

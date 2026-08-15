@@ -318,17 +318,21 @@ private fun OrderSummaryCard(uiState: CheckoutUiState) {
             Spacer(modifier = Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
+                    val seaTrip = uiState.trip != null && uiState.trip?.rideKind != RideKind.BUS
                     Text(
                         when {
-                            uiState.trip?.rideKind == RideKind.FERRY ->
-                                if (uiState.seatCount == 1) "PASSAGE" else "PASSAGES"
+                            seaTrip -> if (uiState.seatCount == 1) "PASSAGE" else "PASSAGES"
                             uiState.seatCount == 1 -> "SEAT"
                             else -> "SEATS"
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(uiState.seatIds.joinToString(", "), fontWeight = FontWeight.SemiBold)
+                    Text(
+                        // Fastcraft/ferry berthing is assigned at the port counter.
+                        if (seaTrip) "Assigned at the port" else uiState.seatIds.joinToString(", "),
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(

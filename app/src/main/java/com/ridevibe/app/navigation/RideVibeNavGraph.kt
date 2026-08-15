@@ -181,8 +181,9 @@ fun RideVibeNavGraph(navController: NavHostController) {
                 },
                 // Single-seat quick booking; passenger counts come from the trip sheet flow.
                 onTripSelected = { trip ->
-                    if (trip.rideKind == RideKind.FERRY) {
-                        // Ferries sell open passage/berths, not chosen seats — straight to checkout.
+                    if (trip.rideKind != RideKind.BUS) {
+                        // Sea services sell passage, not chosen seats (fastcraft
+                        // seating is assigned at the port) — straight to checkout.
                         navController.navigate(Routes.checkout(trip.id, "P1", infants = 0, forSelf = true))
                     } else {
                         navController.navigate(Routes.seatMap(trip.id, seatCount = 1, infants = 0, forSelf = true, leg = "ONE"))
@@ -282,9 +283,10 @@ fun RideVibeNavGraph(navController: NavHostController) {
             ResultsScreen(
                 onBack = { navController.popBackStack() },
                 onTripSelected = { trip ->
-                    if (trip.rideKind == RideKind.FERRY) {
-                        // Open passage: auto-assign one space per passenger and skip the
-                        // seat map, mirroring its round-trip cart handling.
+                    if (trip.rideKind != RideKind.BUS) {
+                        // Open passage (ferries and fastcrafts): auto-assign one space
+                        // per passenger and skip the seat map, mirroring its round-trip
+                        // cart handling. Fastcraft seats are assigned at the port.
                         val spaces = (1..seatCount).joinToString(",") { "P$it" }
                         when {
                             leg == "OUT" && cart.isRoundTrip -> {

@@ -306,7 +306,7 @@ private fun ChooseRideCard(selected: RideService?, onSelect: (RideService) -> Un
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Choose your Ride", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Transport Type", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 RideService.entries.forEach { service ->

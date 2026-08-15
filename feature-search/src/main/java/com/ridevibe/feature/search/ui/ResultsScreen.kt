@@ -324,9 +324,10 @@ internal fun TripResultCard(trip: Trip, onViewSeats: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(24.dp),
             ) {
-                // Ferries board by passage/berth, not a chosen seat.
+                // Sea services sell passage, not chosen seats — ferries board by
+                // berth/space, fastcraft seats are assigned at the port counter.
                 Text(
-                    if (trip.rideKind == RideKind.FERRY) "Book Passage  →" else "View Seats  →",
+                    if (trip.rideKind == RideKind.BUS) "View Seats  →" else "Book Passage  →",
                     fontWeight = FontWeight.Bold,
                 )
             }
