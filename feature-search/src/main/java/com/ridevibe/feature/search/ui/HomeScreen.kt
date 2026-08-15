@@ -26,18 +26,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.DirectionsBoat
+import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.FilterChip
@@ -45,28 +47,34 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ridevibe.core.domain.model.BusClass
@@ -93,6 +101,7 @@ fun HomeScreen(
         bookingForSelf: Boolean,
     ) -> Unit,
     onProfileClick: () -> Unit,
+    onExplore: (query: String, dateMillis: Long, returnDateMillis: Long?) -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val form by viewModel.formState.collectAsState()
@@ -100,6 +109,14 @@ fun HomeScreen(
     var showReturnPicker by remember { mutableStateOf(false) }
     var showPassengerDialog by remember { mutableStateOf(false) }
     var locationPickerTarget by remember { mutableStateOf<LocationTarget?>(null) }
+    // Header search: picking a place routes to the cross-mode results page.
+    var showExploreSearch by remember { mutableStateOf(false) }
+    // "Choose your Ride" service tiles; the trip form opens as a bottom sheet.
+    // Saveable so the chosen tile survives navigating to results and back.
+    var selectedService by rememberSaveable { mutableStateOf<RideService?>(null) }
+    var showTripSheet by remember { mutableStateOf(false) }
+    // Presentation-only, like the deals rail — no loyalty program exists yet.
+    var frequentTraveler by rememberSaveable { mutableStateOf(false) }
 
     if (showDepartPicker) {
         DateDialog(
@@ -142,6 +159,51 @@ fun HomeScreen(
         )
     }
 
+    if (showExploreSearch) {
+        ExploreSearchDialog(
+            locations = form.locations,
+            onDisplayResults = { query, dateMillis, returnDateMillis ->
+                showExploreSearch = false
+                onExplore(query, dateMillis, returnDateMillis)
+            },
+            onDismiss = { showExploreSearch = false },
+        )
+    }
+
+    selectedService?.let { service ->
+        if (showTripSheet) {
+            TripSearchSheet(
+                service = service,
+                form = form,
+                frequentTraveler = frequentTraveler,
+                onFrequentTravelerChanged = { frequentTraveler = it },
+                onDismiss = { showTripSheet = false },
+                onTripTypeChanged = viewModel::onTripTypeChanged,
+                onPickFrom = { locationPickerTarget = LocationTarget.FROM },
+                onPickTo = { locationPickerTarget = LocationTarget.TO },
+                onSwap = viewModel::onSwapLocations,
+                onPickDepartDate = { showDepartPicker = true },
+                onPickReturnDate = { showReturnPicker = true },
+                onPickPassengers = { showPassengerDialog = true },
+                onBookingForSelfChanged = viewModel::onBookingForSelfChanged,
+                onSearch = {
+                    viewModel.primeCart()
+                    showTripSheet = false
+                    onSearch(
+                        form.origin,
+                        form.destination,
+                        form.departureDateMillis ?: return@TripSearchSheet,
+                        form.busClassFilter,
+                        form.adults,
+                        form.children,
+                        form.infants,
+                        form.bookingForSelf,
+                    )
+                },
+            )
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -157,7 +219,7 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.surface,
                         modifier = Modifier
                             .weight(1f)
-                            .clickable { locationPickerTarget = LocationTarget.TO },
+                            .clickable { showExploreSearch = true },
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -201,54 +263,20 @@ fun HomeScreen(
         ) {
             Text("Where to next?", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Book your seat in seconds",
+                "Buy your tickets now",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            SearchCard(
-                form = form,
-                onPickFrom = { locationPickerTarget = LocationTarget.FROM },
-                onPickTo = { locationPickerTarget = LocationTarget.TO },
-                onSwap = viewModel::onSwapLocations,
-                onTripTypeChanged = viewModel::onTripTypeChanged,
-                onPickDepartDate = { showDepartPicker = true },
-                onPickReturnDate = { showReturnPicker = true },
-                onPickPassengers = { showPassengerDialog = true },
-                onBookingForSelfChanged = viewModel::onBookingForSelfChanged,
-                onSearch = {
-                    viewModel.primeCart()
-                    onSearch(
-                        form.origin,
-                        form.destination,
-                        form.departureDateMillis ?: return@SearchCard,
-                        form.busClassFilter,
-                        form.adults,
-                        form.children,
-                        form.infants,
-                        form.bookingForSelf,
-                    )
+            ChooseRideCard(
+                selected = selectedService,
+                onSelect = { service ->
+                    selectedService = service
+                    showTripSheet = true
                 },
             )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text("Preferences", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ClassChip("Any class", form.busClassFilter == null) { viewModel.onBusClassFilterChanged(null) }
-                // Chips reflect the classes that actually exist in inventory.
-                form.busClasses.forEach { busClass ->
-                    ClassChip(busClass.displayLabel(), form.busClassFilter == busClass) {
-                        viewModel.onBusClassFilterChanged(busClass)
-                    }
-                }
-            }
 
             Spacer(modifier = Modifier.height(24.dp))
             HotDealsSection()
@@ -263,33 +291,119 @@ fun HomeScreen(
 
 private enum class LocationTarget { FROM, TO }
 
+/** Bookable service verticals. Ferries/fastcrafts search the same mock inventory until the CRS grows them. */
+private enum class RideService(val label: String, val searchLabel: String, val icon: ImageVector) {
+    PROVINCIAL_BUSES("Provincial Buses", "Search buses", Icons.Filled.DirectionsBus),
+    FERRIES("Ferries", "Search ferries", Icons.Filled.DirectionsBoat),
+    FASTCRAFTS("Fastcrafts", "Search fastcrafts", Icons.Filled.Speed),
+}
+
 @Composable
-private fun SearchCard(
-    form: SearchFormState,
-    onPickFrom: () -> Unit,
-    onPickTo: () -> Unit,
-    onSwap: () -> Unit,
-    onTripTypeChanged: (TripType) -> Unit,
-    onPickDepartDate: () -> Unit,
-    onPickReturnDate: () -> Unit,
-    onPickPassengers: () -> Unit,
-    onBookingForSelfChanged: (Boolean) -> Unit,
-    onSearch: () -> Unit,
-) {
+private fun ChooseRideCard(selected: RideService?, onSelect: (RideService) -> Unit) {
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Trip type tick boxes
+            Text("Choose your Ride", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                RideService.entries.forEach { service ->
+                    ServiceTile(
+                        service = service,
+                        selected = service == selected,
+                        onClick = { onSelect(service) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServiceTile(
+    service: RideService,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+        modifier = modifier,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 14.dp),
+        ) {
+            Icon(
+                service.icon,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                service.label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * The trip selector, moved off the home card into a modal sheet (opens from a
+ * service tile; its own window renders above the bottom navigation). Location,
+ * date, and passenger pickers are dialogs, so they stack above the sheet.
+ */
+@Composable
+private fun TripSearchSheet(
+    service: RideService,
+    form: SearchFormState,
+    frequentTraveler: Boolean,
+    onFrequentTravelerChanged: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    onTripTypeChanged: (TripType) -> Unit,
+    onPickFrom: () -> Unit,
+    onPickTo: () -> Unit,
+    onSwap: () -> Unit,
+    onPickDepartDate: () -> Unit,
+    onPickReturnDate: () -> Unit,
+    onPickPassengers: () -> Unit,
+    onBookingForSelfChanged: (Boolean) -> Unit,
+    onSearch: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+        ) {
+            // Header: service title + compact trip-type pill pair
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TripTypeTick("One-way", form.tripType == TripType.ONE_WAY) { onTripTypeChanged(TripType.ONE_WAY) }
-                Spacer(modifier = Modifier.width(16.dp))
-                TripTypeTick("Round-trip", form.tripType == TripType.ROUND_TRIP) { onTripTypeChanged(TripType.ROUND_TRIP) }
+                Text(
+                    service.label,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                TripTypePill("One-way", form.tripType == TripType.ONE_WAY) { onTripTypeChanged(TripType.ONE_WAY) }
+                Spacer(modifier = Modifier.width(6.dp))
+                TripTypePill("Round-trip", form.tripType == TripType.ROUND_TRIP) { onTripTypeChanged(TripType.ROUND_TRIP) }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -323,34 +437,59 @@ private fun SearchCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Depart + Return side by side; Return is disabled on one-way.
+            val roundTrip = form.tripType == TripType.ROUND_TRIP
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoTile(
                     icon = { Icon(Icons.Filled.CalendarMonth, null, tint = MaterialTheme.colorScheme.primary) },
-                    caption = if (form.tripType == TripType.ROUND_TRIP) "DEPART" else "DATE",
+                    caption = "DEPART",
                     value = form.departureDateMillis?.let(::formatDate) ?: "Pick a date",
                     modifier = Modifier.weight(1f),
                     onClick = onPickDepartDate,
                 )
-                if (form.tripType == TripType.ROUND_TRIP) {
-                    InfoTile(
-                        icon = { Icon(Icons.Filled.CalendarMonth, null, tint = MaterialTheme.colorScheme.secondary) },
-                        caption = "RETURN",
-                        value = form.returnDateMillis?.let(::formatDate) ?: "Pick a date",
-                        modifier = Modifier.weight(1f),
-                        onClick = onPickReturnDate,
-                    )
-                }
+                InfoTile(
+                    icon = {
+                        Icon(
+                            Icons.Filled.CalendarMonth,
+                            null,
+                            tint = if (roundTrip) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    caption = "RETURN",
+                    value = if (roundTrip) form.returnDateMillis?.let(::formatDate) ?: "Pick a date" else "—",
+                    modifier = Modifier.weight(1f),
+                    onClick = if (roundTrip) onPickReturnDate else null,
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            InfoTile(
-                icon = { Icon(Icons.Filled.Person, null, tint = MaterialTheme.colorScheme.primary) },
-                caption = "PASSENGERS",
-                value = form.passengersLabel,
-                modifier = Modifier.fillMaxWidth(),
+            // Passenger count + Frequent traveler switch (switch is presentation-only).
+            Surface(
                 onClick = onPickPassengers,
-            )
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Person, null, tint = MaterialTheme.colorScheme.primary)
+                    Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                        Text(
+                            "PASSENGERS",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(form.passengersLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                    Text(
+                        "Frequent traveler",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Switch(checked = frequentTraveler, onCheckedChange = onFrequentTravelerChanged)
+                }
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -394,21 +533,24 @@ private fun SearchCard(
             ) {
                 Icon(Icons.Filled.Search, contentDescription = null)
                 Spacer(modifier = Modifier.size(8.dp))
-                Text("Search Trips", fontWeight = FontWeight.Bold)
+                Text(service.searchLabel, fontWeight = FontWeight.Bold)
             }
         }
     }
 }
 
 @Composable
-private fun TripTypeTick(label: String, checked: Boolean, onCheck: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable(onClick = onCheck),
-    ) {
-        Checkbox(checked = checked, onCheckedChange = { onCheck() })
-        Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-    }
+private fun TripTypePill(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+        shape = RoundedCornerShape(50),
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primary,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+        ),
+    )
 }
 
 @Composable
@@ -474,11 +616,10 @@ private fun LocationPickerDialog(
     onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
+    // Input-driven only: no default listing; matches appear as the user types.
     val filtered = remember(query, locations) {
-        if (query.isBlank()) locations else locations.filter { it.name.contains(query.trim(), ignoreCase = true) }
+        if (query.isBlank()) emptyList() else locations.filter { it.name.contains(query.trim(), ignoreCase = true) }
     }
-    val terminals = filtered.filter { it.isCentralTerminal }
-    val destinations = filtered.filterNot { it.isCentralTerminal }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -496,26 +637,27 @@ private fun LocationPickerDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyColumn(modifier = Modifier.heightIn(max = 380.dp)) {
-                    if (terminals.isNotEmpty()) {
-                        item { SectionLabel("Central terminals") }
-                        items(terminals, key = { "t-${it.name}" }) { location ->
-                            LocationRow(location, highlight = true) { onSelected(location.name) }
+                    when {
+                        query.isBlank() -> item {
+                            Text(
+                                "Start typing to find terminals, ports, and destinations.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 16.dp),
+                            )
                         }
-                    }
-                    if (destinations.isNotEmpty()) {
-                        item { SectionLabel("Destinations") }
-                        items(destinations, key = { "d-${it.name}" }) { location ->
-                            LocationRow(location, highlight = false) { onSelected(location.name) }
-                        }
-                    }
-                    if (terminals.isEmpty() && destinations.isEmpty()) {
-                        item {
+
+                        filtered.isEmpty() -> item {
                             Text(
                                 "No matching locations",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 16.dp),
                             )
+                        }
+
+                        else -> items(filtered, key = { it.name }) { location ->
+                            LocationRow(location, highlight = false) { onSelected(location.name) }
                         }
                     }
                 }
@@ -525,15 +667,197 @@ private fun LocationPickerDialog(
     )
 }
 
+/**
+ * Header search: type → pick a place or whole region → the trip-type toggle,
+ * date selector, and a "Display Results" pill append below the choice.
+ */
 @Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+private fun ExploreSearchDialog(
+    locations: List<TerminalLocation>,
+    onDisplayResults: (query: String, dateMillis: Long, returnDateMillis: Long?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf<String?>(null) }
+    var roundTrip by remember { mutableStateOf(false) }
+    var departMillis by remember { mutableStateOf<Long?>(System.currentTimeMillis()) }
+    var returnMillis by remember { mutableStateOf<Long?>(null) }
+    var showDepartPicker by remember { mutableStateOf(false) }
+    var showReturnPicker by remember { mutableStateOf(false) }
+
+    if (showDepartPicker) {
+        DateDialog(
+            initial = departMillis,
+            onPicked = { departMillis = it },
+            onDismiss = { showDepartPicker = false },
+        )
+    }
+    if (showReturnPicker) {
+        DateDialog(
+            initial = returnMillis ?: departMillis,
+            onPicked = { returnMillis = it },
+            onDismiss = { showReturnPicker = false },
+        )
+    }
+
+    val filtered = remember(query, locations) {
+        if (query.isBlank()) emptyList() else locations.filter { it.name.contains(query.trim(), ignoreCase = true) }
+    }
+    val matchingRegions = remember(query, locations) {
+        if (query.isBlank()) {
+            emptyList()
+        } else {
+            locations.map { it.region }.filter { it.isNotBlank() }.distinct()
+                .filter { it.contains(query.trim(), ignoreCase = true) }
+        }
+    }
+
+    val canDisplay = selected != null && departMillis != null && (!roundTrip || returnMillis != null)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Search trips", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = {
+                        query = it
+                        selected = null // editing the text restarts the suggestion stage
+                    },
+                    placeholder = { Text("Search terminals & destinations") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (selected == null) {
+                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                        when {
+                            query.isBlank() -> item {
+                                Text(
+                                    "Start typing to find terminals, ports, destinations, or a whole region.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 16.dp),
+                                )
+                            }
+
+                            filtered.isEmpty() && matchingRegions.isEmpty() -> item {
+                                Text(
+                                    "No matching locations",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 16.dp),
+                                )
+                            }
+
+                            else -> {
+                                items(matchingRegions, key = { "region-$it" }) { region ->
+                                    RegionRow(region) {
+                                        selected = region
+                                        query = region
+                                    }
+                                }
+                                items(filtered, key = { it.name }) { location ->
+                                    LocationRow(location, highlight = false) {
+                                        selected = location.name
+                                        query = location.name
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Stage 2: trip type + dates + Display Results.
+                    Row {
+                        TripTypePill("One-way", !roundTrip) { roundTrip = false }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        TripTypePill("Round-trip", roundTrip) { roundTrip = true }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        InfoTile(
+                            icon = { Icon(Icons.Filled.CalendarMonth, null, tint = MaterialTheme.colorScheme.primary) },
+                            caption = "DEPART",
+                            value = departMillis?.let(::formatDate) ?: "Pick a date",
+                            modifier = Modifier.weight(1f),
+                            onClick = { showDepartPicker = true },
+                        )
+                        InfoTile(
+                            icon = {
+                                Icon(
+                                    Icons.Filled.CalendarMonth,
+                                    null,
+                                    tint = if (roundTrip) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            caption = "RETURN",
+                            value = if (roundTrip) returnMillis?.let(::formatDate) ?: "Pick a date" else "—",
+                            modifier = Modifier.weight(1f),
+                            onClick = if (roundTrip) {
+                                { showReturnPicker = true }
+                            } else {
+                                null
+                            },
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Button(
+                        onClick = {
+                            val place = selected ?: return@Button
+                            val depart = departMillis ?: return@Button
+                            onDisplayResults(place, depart, returnMillis.takeIf { roundTrip })
+                        },
+                        enabled = canDisplay,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(24.dp),
+                    ) {
+                        Text("Display Results", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/** A whole-region suggestion (all hubs in Luzon/Visayas/Mindanao at once). */
+@Composable
+private fun RegionRow(region: String, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp).clickable(onClick = onClick),
+    ) {
+        Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.Hub,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(18.dp),
+            )
+            Column(modifier = Modifier.padding(start = 10.dp)) {
+                Text(
+                    region,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Text(
+                    "All terminals & ports in this region",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -643,20 +967,6 @@ private fun DateDialog(initial: Long?, onPicked: (Long) -> Unit, onDismiss: () -
     ) {
         DatePicker(state = state)
     }
-}
-
-@Composable
-private fun ClassChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label) },
-        shape = RoundedCornerShape(50),
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primary,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-        ),
-    )
 }
 
 internal fun BusClass.displayLabel(): String = when (this) {

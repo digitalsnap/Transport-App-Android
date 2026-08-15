@@ -1,6 +1,7 @@
 package com.ridevibe.core.network.api
 
 import com.ridevibe.core.network.dto.BookingRequestDto
+import com.ridevibe.core.network.dto.JourneyDto
 import com.ridevibe.core.network.dto.LocationDto
 import com.ridevibe.core.network.dto.SeatDto
 import com.ridevibe.core.network.dto.TicketDto
@@ -29,6 +30,18 @@ interface CrsApiService {
 
     @GET("v1/trips/{tripId}")
     suspend fun getTrip(@Path("tripId") tripId: String): TripDto
+
+    /** Curated multi-leg tourist routes whose destination matches [query]. */
+    @GET("v1/journeys")
+    suspend fun findJourneys(@Query("query") query: String): List<JourneyDto>
+
+    /** Cross-mode destination search: buses + ferries + fastcrafts related to [query]. */
+    @GET("v1/trips/related")
+    suspend fun searchRelatedTrips(
+        @Query("query") query: String,
+        @Query("departureDate") departureDateEpochMillis: Long,
+        @Query("returnDate") returnDateEpochMillis: Long? = null,
+    ): List<TripDto>
 
     @GET("v1/tickets/{ticketId}")
     suspend fun getTicket(@Path("ticketId") ticketId: String): TicketDto

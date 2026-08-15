@@ -1,6 +1,7 @@
 package com.ridevibe.core.network
 
 import com.ridevibe.core.domain.model.BusClass
+import com.ridevibe.core.domain.model.Journey
 import com.ridevibe.core.domain.model.TerminalLocation
 import com.ridevibe.core.domain.model.Trip
 import com.ridevibe.core.domain.repository.TripRepository
@@ -25,6 +26,17 @@ class TripRepositoryImpl @Inject constructor(
 
     override suspend fun getTrip(tripId: String): Result<Trip> =
         runCatching { apiService.getTrip(tripId).toDomain() }
+
+    override suspend fun searchRelated(
+        query: String,
+        departureDateEpochMillis: Long,
+        returnDateEpochMillis: Long?,
+    ): Result<List<Trip>> = runCatching {
+        apiService.searchRelatedTrips(query, departureDateEpochMillis, returnDateEpochMillis).map { it.toDomain() }
+    }
+
+    override suspend fun findJourneys(query: String): Result<List<Journey>> =
+        runCatching { apiService.findJourneys(query).map { it.toDomain() } }
 
     override suspend fun getLocations(): List<TerminalLocation> =
         runCatching { apiService.getLocations().map { it.toDomain() } }.getOrDefault(emptyList())

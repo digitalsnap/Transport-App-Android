@@ -5,7 +5,7 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.ConfirmationNumber
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -17,7 +17,7 @@ import com.ridevibe.app.ui.theme.Charcoal
 import com.ridevibe.app.ui.theme.SlateSage
 import com.ridevibe.app.ui.theme.Tiffany
 
-enum class BottomTab { HOME, BOOKINGS, SCAN, WALLET, CHAT }
+enum class BottomTab { HOME, BOOKINGS, ITINERARY, WALLET, CHAT }
 
 /**
  * The app-wide bottom navigation, hosted by the root Scaffold so every screen
@@ -29,7 +29,7 @@ fun RideVibeBottomNav(
     selectedTab: BottomTab?,
     onHomeClick: () -> Unit,
     onBookingsClick: () -> Unit,
-    onScanClick: () -> Unit,
+    onItineraryClick: () -> Unit,
     onWalletClick: () -> Unit,
     onChatClick: () -> Unit,
 ) {
@@ -57,10 +57,10 @@ fun RideVibeBottomNav(
             colors = itemColors,
         )
         NavigationBarItem(
-            selected = selectedTab == BottomTab.SCAN,
-            onClick = onScanClick,
-            icon = { Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan a ticket QR") },
-            label = { Text("Scan") },
+            selected = selectedTab == BottomTab.ITINERARY,
+            onClick = onItineraryClick,
+            icon = { Icon(Icons.Filled.Map, contentDescription = "Trip itinerary planner") },
+            label = { Text("Itinerary") },
             colors = itemColors,
         )
         NavigationBarItem(
