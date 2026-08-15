@@ -3,6 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+    // Processes app/google-services.json into resources (e.g. default_web_client_id).
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -65,6 +67,10 @@ dependencies {
     // Social sign-in
     implementation(libs.play.services.auth)
     implementation(libs.facebook.login)
+
+    // Firebase — the BoM pins every Firebase artifact's version
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
 
     // QR ticket scanner (bottom-nav Scan tab)
     implementation(libs.camerax.core)
