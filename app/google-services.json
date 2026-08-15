@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "155138939885",
+    "project_id": "bus-app-beta",
+    "storage_bucket": "bus-app-beta.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:155138939885:android:6fd8d29880b27394d0a5e4",
+        "android_client_info": {
+          "package_name": "com.ridevibe.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "155138939885-diqqc32535k620m8heturpegsfb3eev9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.ridevibe.app",
+            "certificate_hash": "cc4b46355c6dc0a8a65eb550012f0bd7c1782397"
+          }
+        },
+        {
+          "client_id": "155138939885-9ft5nbmjaf3pjpcbb8b62ft7aufgltmg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCLR7G_i2ZGcn2dDmSIATJveUTjd2z4E6Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "155138939885-9ft5nbmjaf3pjpcbb8b62ft7aufgltmg.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -63,6 +63,12 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
 facebook-login = { group = "com.facebook.android", name = "facebook-login", version.ref = "facebookLogin" }
 
+# Firebase — versions come from the BoM. 33.7.0 is the newest line compatible
+# with this project's Kotlin 1.9.24; BoM 34.x ships Kotlin 2.2 metadata and
+# breaks KSP here. Bump alongside a future Kotlin/Compose upgrade.
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version = "33.7.0" }
+firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
@@ -70,3 +76,4 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ksp = { id = "com.google.devtools.ksp", version = "1.9.24-1.0.20" }
+google-services = { id = "com.google.gms.google-services", version = "4.5.0" }
