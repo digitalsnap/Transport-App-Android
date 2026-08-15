@@ -43,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ridevibe.core.domain.model.BusClass
+import com.ridevibe.core.domain.model.RideKind
 import com.ridevibe.core.domain.model.Trip
 import com.ridevibe.feature.search.viewmodel.ResultsViewModel
 import com.ridevibe.feature.search.viewmodel.SortOption
@@ -51,7 +53,7 @@ import com.ridevibe.feature.search.viewmodel.SortOption
 @Composable
 fun ResultsScreen(
     onBack: () -> Unit,
-    onViewSeats: (tripId: String) -> Unit,
+    onTripSelected: (trip: Trip) -> Unit,
     viewModel: ResultsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -60,7 +62,7 @@ fun ResultsScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Available Buses", fontWeight = FontWeight.Bold) },
+                title = { Text("Available Trips", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -142,7 +144,7 @@ fun ResultsScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     items(uiState.sortedResults, key = { it.id }) { trip ->
-                        TripResultCard(trip = trip, onViewSeats = { onViewSeats(trip.id) })
+                        TripResultCard(trip = trip, onViewSeats = { onTripSelected(trip) })
                     }
                 }
             }
@@ -179,8 +181,22 @@ private fun SortChip(label: String, selected: Boolean, onClick: () -> Unit) {
     )
 }
 
+/**
+ * Sea services use industry class names (Tourist/Business/Premium); ferries sell
+ * open passage/berths rather than selected seats, per operator practice
+ * (2GO accommodations; OceanJet-style assigned seating on fastcrafts).
+ */
+internal fun Trip.classLabel(): String = when (rideKind) {
+    RideKind.BUS -> busClass.displayLabel()
+    else -> when (busClass) {
+        BusClass.ORDINARY -> "Tourist Class"
+        BusClass.DELUXE -> "Business Class"
+        BusClass.LUXURY -> "Premium Class"
+    }
+}
+
 @Composable
-private fun TripResultCard(trip: Trip, onViewSeats: () -> Unit) {
+internal fun TripResultCard(trip: Trip, onViewSeats: () -> Unit) {
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -195,7 +211,7 @@ private fun TripResultCard(trip: Trip, onViewSeats: () -> Unit) {
                 Column {
                     Text(trip.operatorName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     Text(
-                        trip.busClass.displayLabel(),
+                        trip.classLabel(),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -276,7 +292,7 @@ private fun TripResultCard(trip: Trip, onViewSeats: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "${trip.availableSeatCount} seats left",
+                    "${trip.availableSeatCount} ${if (trip.rideKind == RideKind.FERRY) "spaces" else "seats"} left",
                     style = MaterialTheme.typography.bodySmall,
                     // Low-seat warnings are one of Gold's three sanctioned uses.
                     color = if (trip.availableSeatCount <= 10) {
@@ -308,13 +324,18 @@ private fun TripResultCard(trip: Trip, onViewSeats: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(24.dp),
             ) {
-                Text("View Seats  →", fontWeight = FontWeight.Bold)
+                // Sea services sell passage, not chosen seats — ferries board by
+                // berth/space, fastcraft seats are assigned at the port counter.
+                Text(
+                    if (trip.rideKind == RideKind.BUS) "View Seats  →" else "Book Passage  →",
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }
 }
 
-private fun durationLabel(departMillis: Long, arriveMillis: Long): String {
+internal fun durationLabel(departMillis: Long, arriveMillis: Long): String {
     val totalMinutes = ((arriveMillis - departMillis) / 60_000).coerceAtLeast(0)
     val hours = totalMinutes / 60
     val minutes = totalMinutes % 60

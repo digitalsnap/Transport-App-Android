@@ -2,6 +2,8 @@ package com.ridevibe.core.network.mock
 
 import com.ridevibe.core.domain.model.BusClass
 import com.ridevibe.core.domain.model.CoPassenger
+import com.ridevibe.core.domain.model.Itinerary
+import com.ridevibe.core.domain.model.Journey
 import com.ridevibe.core.domain.model.Passenger
 import com.ridevibe.core.domain.model.TerminalLocation
 import com.ridevibe.core.domain.model.PaymentMethod
@@ -15,6 +17,7 @@ import com.ridevibe.core.domain.model.UserProfile
 import com.ridevibe.core.domain.model.Vehicle
 import com.ridevibe.core.domain.model.Wallet
 import com.ridevibe.core.domain.repository.CheckoutRepository
+import com.ridevibe.core.domain.repository.ItineraryRepository
 import com.ridevibe.core.domain.repository.ProfileRepository
 import com.ridevibe.core.domain.repository.SeatRepository
 import com.ridevibe.core.domain.repository.SupportRepository
@@ -57,6 +60,18 @@ class MockTripRepository @Inject constructor(
         return db.getTrip(tripId)?.let { Result.success(it) }
             ?: Result.failure(IllegalStateException("Trip not found: $tripId"))
     }
+
+    override suspend fun searchRelated(
+        query: String,
+        departureDateEpochMillis: Long,
+        returnDateEpochMillis: Long?,
+    ): Result<List<Trip>> {
+        delay(FAKE_LATENCY_MS)
+        return Result.success(db.searchRelated(query, departureDateEpochMillis, returnDateEpochMillis))
+    }
+
+    override suspend fun findJourneys(query: String): Result<List<Journey>> =
+        Result.success(db.journeys(query))
 
     override suspend fun getLocations(): List<TerminalLocation> = db.locations()
 
@@ -181,6 +196,22 @@ class MockProfileRepository @Inject constructor(
         db.removeVehicle(vehicleId)
         return Result.success(Unit)
     }
+}
+
+@Singleton
+class MockItineraryRepository @Inject constructor(
+    private val db: MockDatabase,
+) : ItineraryRepository {
+
+    override suspend fun getItineraries(): List<Itinerary> = db.itineraries()
+
+    override suspend fun addItinerary(journey: Journey, startDateMillis: Long): Itinerary =
+        db.addItinerary(journey, startDateMillis)
+
+    override suspend fun setLegDone(itineraryId: String, legIndex: Int, done: Boolean) =
+        db.setLegDone(itineraryId, legIndex, done)
+
+    override suspend fun removeItinerary(itineraryId: String) = db.removeItinerary(itineraryId)
 }
 
 @Singleton

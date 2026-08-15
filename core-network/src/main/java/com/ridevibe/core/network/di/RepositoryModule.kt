@@ -1,6 +1,7 @@
 package com.ridevibe.core.network.di
 
 import com.ridevibe.core.domain.repository.CheckoutRepository
+import com.ridevibe.core.domain.repository.ItineraryRepository
 import com.ridevibe.core.domain.repository.ProfileRepository
 import com.ridevibe.core.domain.repository.SeatRepository
 import com.ridevibe.core.domain.repository.SupportRepository
@@ -10,6 +11,7 @@ import com.ridevibe.core.network.CheckoutRepositoryImpl
 import com.ridevibe.core.network.SeatRepositoryImpl
 import com.ridevibe.core.network.TripRepositoryImpl
 import com.ridevibe.core.network.mock.MockCheckoutRepository
+import com.ridevibe.core.network.mock.MockItineraryRepository
 import com.ridevibe.core.network.mock.MockProfileRepository
 import com.ridevibe.core.network.mock.MockSeatRepository
 import com.ridevibe.core.network.mock.MockSupportRepository
@@ -71,4 +73,10 @@ object RepositoryModule {
     fun provideSupportRepository(
         mock: Provider<MockSupportRepository>,
     ): SupportRepository = mock.get() // TODO: real impl arrives with the support-chat backend
+
+    @Provides
+    @Singleton
+    fun provideItineraryRepository(
+        mock: Provider<MockItineraryRepository>,
+    ): ItineraryRepository = mock.get() // TODO: sync itineraries to the account once the CRS supports them
 }

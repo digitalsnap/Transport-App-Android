@@ -55,8 +55,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ridevibe.core.domain.model.BusClass
 import com.ridevibe.core.domain.model.PassengerType
 import com.ridevibe.core.domain.model.PaymentMethod
+import com.ridevibe.core.domain.model.RideKind
 import com.ridevibe.feature.checkout.ocr.IdCaptureCamera
 import com.ridevibe.feature.checkout.viewmodel.CheckoutUiState
 import com.ridevibe.feature.checkout.viewmodel.CheckoutViewModel
@@ -268,8 +270,18 @@ private fun OrderSummaryCard(uiState: CheckoutUiState) {
                 )
                 uiState.trip?.let { trip ->
                     Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surface) {
+                        // Sea services use industry class names; ferries sell passage, not seats.
+                        val classLabel = when (trip.rideKind) {
+                            RideKind.BUS ->
+                                "${trip.busClass.name.lowercase().replaceFirstChar { it.uppercase() }} Bus"
+                            RideKind.FERRY, RideKind.FASTCRAFT -> when (trip.busClass) {
+                                BusClass.ORDINARY -> "Tourist Class"
+                                BusClass.DELUXE -> "Business Class"
+                                BusClass.LUXURY -> "Premium Class"
+                            } + if (trip.rideKind == RideKind.FERRY) " Ferry" else " Fastcraft"
+                        }
                         Text(
-                            "${trip.busClass.name.lowercase().replaceFirstChar { it.uppercase() }} Bus",
+                            classLabel,
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         )
@@ -306,12 +318,21 @@ private fun OrderSummaryCard(uiState: CheckoutUiState) {
             Spacer(modifier = Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
+                    val seaTrip = uiState.trip != null && uiState.trip?.rideKind != RideKind.BUS
                     Text(
-                        if (uiState.seatCount == 1) "SEAT" else "SEATS",
+                        when {
+                            seaTrip -> if (uiState.seatCount == 1) "PASSAGE" else "PASSAGES"
+                            uiState.seatCount == 1 -> "SEAT"
+                            else -> "SEATS"
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(uiState.seatIds.joinToString(", "), fontWeight = FontWeight.SemiBold)
+                    Text(
+                        // Fastcraft/ferry berthing is assigned at the port counter.
+                        if (seaTrip) "Assigned at the port" else uiState.seatIds.joinToString(", "),
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
