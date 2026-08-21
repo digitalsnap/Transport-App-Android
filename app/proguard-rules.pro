@@ -3,6 +3,12 @@
 # kotlinx-serialization serializers and Retrofit generic signatures, which
 # crashes at runtime only in release builds.
 
+# ── Crashlytics ──────────────────────────────────────────────────────────────
+# Keep line numbers and remap source file names so uploaded mapping files
+# produce readable beta stack traces instead of "SourceFile:0".
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
 # ── kotlinx-serialization ────────────────────────────────────────────────────
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.AnnotationsKt

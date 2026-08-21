@@ -7,6 +7,7 @@ import com.ridevibe.core.domain.repository.SeatRepository
 import com.ridevibe.core.domain.repository.SupportRepository
 import com.ridevibe.core.domain.repository.TripRepository
 import com.ridevibe.core.domain.repository.WalletRepository
+import com.ridevibe.core.network.BuildConfig
 import com.ridevibe.core.network.CheckoutRepositoryImpl
 import com.ridevibe.core.network.SeatRepositoryImpl
 import com.ridevibe.core.network.TripRepositoryImpl
@@ -25,11 +26,18 @@ import javax.inject.Provider
 import javax.inject.Singleton
 
 /**
- * MOCK-DATA SWITCH — flip to false (and delete the core-network/mock package)
- * when the real CRS backend goes live. Everything below routes through this
- * one constant, so going live is a one-line change plus a folder delete.
+ * MOCK-DATA SWITCH — build config now, not a source constant, so switching a
+ * build between mock and real data never needs a code edit:
+ *
+ *     ./gradlew installDebug -Pridevibe.useMocks=false
+ *
+ * Defaults to true because the CRS backend does not exist yet (roadmap Phase 0).
+ * Flip the default in gradle.properties once it does.
+ *
+ * KEEP the mock package after the backend lands — it is what lets the app build,
+ * demo, and run UI tests with no server reachable. It is a dev asset, not debt.
  */
-private const val USE_MOCK_DATA = true
+private val USE_MOCK_DATA = BuildConfig.USE_MOCK_DATA
 
 @Module
 @InstallIn(SingletonComponent::class)

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Debug builds talk to a local CRS over plain HTTP — 10.0.2.2 is the host
+         machine as seen from the emulator, or a LAN IP for a physical device.
+         Android 9+ blocks cleartext by default, so debug needs this opt-in.
+
+         Debug source set ONLY. Release builds stay HTTPS-only: this never
+         merges into the APK your testers install. -->
+    <application android:usesCleartextTraffic="true" />
+
+</manifest>

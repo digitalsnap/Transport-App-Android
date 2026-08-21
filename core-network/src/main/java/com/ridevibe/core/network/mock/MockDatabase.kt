@@ -47,7 +47,7 @@ class MockDatabase @Inject constructor() {
     // principal passenger seaports across the archipelago. Names that also
     // appear in routeServices (Cubao, Pasay, PITX, Batangas Port, Naga) must
     // keep those exact strings so hub picks resolve to seeded corridors.
-    private val hubs: List<TerminalLocation> = buildList {
+    internal val hubs: List<TerminalLocation> = buildList {
         val luzon = "Metro Manila & Luzon"
         val visayas = "Visayas"
         val mindanao = "Mindanao"
@@ -116,7 +116,7 @@ class MockDatabase @Inject constructor() {
         seaport("Mukas Port", mindanao, "RoRo across Panguil Bay (Lanao del Norte)")
     }
 
-    private data class RouteService(
+    internal data class RouteService(
         val operatorName: String,
         val busClass: BusClass,
         val farePhp: Double,
@@ -489,7 +489,7 @@ class MockDatabase @Inject constructor() {
     // ── Curated tourist journeys ────────────────────────────────────────────
     // Multi-leg routes travellers ask for but can't be expected to assemble
     // themselves. Keywords match the search query (destination-side).
-    private val journeySeeds: List<Pair<List<String>, Journey>> = listOf(
+    internal val journeySeeds: List<Pair<List<String>, Journey>> = listOf(
         // Direct options lead: through-buses ride the RoRo ferries with their
         // passengers on a single ticket — no DIY leg-by-leg chains.
         listOf("siargao", "dapa", "surigao") to Journey(
@@ -620,8 +620,8 @@ class MockDatabase @Inject constructor() {
         }
     }
 
-    private val allBusRoutes by lazy { mergeRoutes(routeServices, xlsxBusRoutes) }
-    private val allSeaRoutes by lazy { mergeRoutes(seaRouteServices, xlsxSeaRoutes) }
+    internal val allBusRoutes by lazy { mergeRoutes(routeServices, xlsxBusRoutes) }
+    internal val allSeaRoutes by lazy { mergeRoutes(seaRouteServices, xlsxSeaRoutes) }
 
     /** Fallback services so ANY searched route still returns demo inventory. */
     private val fallbackServices = listOf(

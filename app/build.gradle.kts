@@ -1,3 +1,7 @@
+import com.google.firebase.appdistribution.gradle.AppDistributionExtension
+import com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,7 +9,23 @@ plugins {
     alias(libs.plugins.ksp)
     // Processes app/google-services.json into resources (e.g. default_web_client_id).
     alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics)
+    alias(libs.plugins.firebase.appdistribution)
 }
+
+// Release signing credentials. Never committed: keystore.properties is gitignored,
+// and CI supplies the same four values as RIDEVIBE_* environment variables.
+// See RELEASING.md for how to generate the keystore and fill this in.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun signingSecret(key: String, envVar: String): String? =
+    (keystoreProperties.getProperty(key) ?: System.getenv(envVar))?.takeIf { it.isNotBlank() }
+
+val releaseStoreFile = signingSecret("storeFile", "RIDEVIBE_STORE_FILE")
+val hasReleaseKeystore = releaseStoreFile != null
 
 android {
     namespace = "com.ridevibe.app"
@@ -15,8 +35,22 @@ android {
         applicationId = "com.ridevibe.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // Every App Distribution upload needs a fresh versionCode — the console
+        // rejects duplicates. Bump ridevibe.versionCode in gradle.properties, or
+        // override per-build with -Pridevibe.versionCode=<n> from CI.
+        versionCode = (findProperty("ridevibe.versionCode") as String?)?.toInt() ?: 1
+        versionName = (findProperty("ridevibe.versionName") as String?) ?: "1.0.0"
+    }
+
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = signingSecret("storePassword", "RIDEVIBE_STORE_PASSWORD")
+                keyAlias = signingSecret("keyAlias", "RIDEVIBE_KEY_ALIAS")
+                keyPassword = signingSecret("keyPassword", "RIDEVIBE_KEY_PASSWORD")
+            }
+        }
     }
 
     buildFeatures {
@@ -39,6 +73,33 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                logger.warn(
+                    "RideVibe: no release keystore configured — assembleRelease will produce an " +
+                        "UNSIGNED APK that testers cannot install. See RELEASING.md."
+                )
+            }
+
+            // Upload the R8 mapping file so beta crash reports deobfuscate.
+            configure<CrashlyticsExtension> {
+                mappingFileUploadEnabled = true
+            }
+
+            configure<AppDistributionExtension> {
+                artifactType = "APK"
+                // Tester groups are managed in the Firebase console under App Distribution.
+                groups = "beta"
+                releaseNotesFile = "${rootDir}/release-notes.txt"
+            }
+        }
+        debug {
+            // Local debug crashes are noise in the Crashlytics dashboard.
+            configure<CrashlyticsExtension> {
+                mappingFileUploadEnabled = false
+            }
         }
     }
 }
@@ -71,6 +132,7 @@ dependencies {
     // Firebase — the BoM pins every Firebase artifact's version
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
+    implementation(libs.firebase.crashlytics)
 
     // QR ticket scanner (bottom-nav Scan tab)
     implementation(libs.camerax.core)
