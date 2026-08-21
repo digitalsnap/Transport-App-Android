@@ -16,8 +16,8 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Named
 import javax.inject.Singleton
 
-private const val BASE_HTTP_URL = "https://api.ridevibe.example.com/"
-private const val BASE_WS_URL = "wss://api.ridevibe.example.com"
+// Base URLs come from BuildConfig (see core-network/build.gradle.kts) so a local
+// or staging CRS is a -P flag, not a code edit.
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -26,7 +26,7 @@ object NetworkModule {
     @Provides
     @Singleton
     @Named("wsBaseUrl")
-    fun provideWsBaseUrl(): String = BASE_WS_URL
+    fun provideWsBaseUrl(): String = BuildConfig.WS_BASE_URL
 
     @Provides
     @Singleton
@@ -53,7 +53,7 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient, json: Json): Retrofit = Retrofit.Builder()
-        .baseUrl(BASE_HTTP_URL)
+        .baseUrl(BuildConfig.API_BASE_URL)
         .client(okHttpClient)
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()

@@ -1,0 +1,317 @@
+[
+    {
+        "name": "Alabang VTX",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Metro Manila & Luzon",
+        "description": "Vista Terminal Exchange, Muntinlupa"
+    },
+    {
+        "name": "Avenida",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Metro Manila & Luzon",
+        "description": "Sampaloc, Manila — Central Luzon routes (Pampanga, Pangasinan)"
+    },
+    {
+        "name": "Batangas Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Metro Manila & Luzon",
+        "description": "Gateway to Mindoro (Puerto Galera), Boracay via Caticlan, Romblon, and Panay"
+    },
+    {
+        "name": "Coron Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Metro Manila & Luzon",
+        "description": "Palawan island-hopping and Manila ferry connections"
+    },
+    {
+        "name": "Cubao",
+        "isCentralTerminal": true,
+        "kind": "BUS_TERMINAL",
+        "region": "Metro Manila & Luzon",
+        "description": "EDSA-Cubao terminal complex (Victory Liner, Five Star, Genesis) — Northern & Central Luzon"
+    },
+    {
+        "name": "El Nido Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Metro Manila & Luzon",
+        "description": "Palawan island-hopping and regional ferry connections"
+    },
+    {
+        "name": "Legazpi",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Metro Manila & Luzon",
+        "description": "Legazpi Terminal, Albay — Bicol regional hub"
+    },
+    {
+        "name": "Lucena Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Metro Manila & Luzon",
+        "description": "Quezon — connections to Marinduque and Romblon"
+    },
+    {
+        "name": "Manila North Harbor",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Metro Manila & Luzon",
+        "description": "Busiest passenger seaport — long-haul inter-island ferries to Visayas and Mindanao"
+    },
+    {
+        "name": "Matnog Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Metro Manila & Luzon",
+        "description": "Sorsogon RoRo jump-off connecting mainland Luzon to Samar and the Visayas"
+    },
+    {
+        "name": "NLET Bocaue",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Metro Manila & Luzon",
+        "description": "North Luzon Express Terminal — Northern Luzon transfer hub decongesting Metro Manila"
+    },
+    {
+        "name": "Naga",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Metro Manila & Luzon",
+        "description": "Naga City Terminal, Camarines Sur — Bicol regional hub"
+    },
+    {
+        "name": "PITX",
+        "isCentralTerminal": true,
+        "kind": "BUS_TERMINAL",
+        "region": "Metro Manila & Luzon",
+        "description": "Parañaque Integrated Terminal Exchange — south to Cavite, Batangas, Bicol, Visayas, Mindanao"
+    },
+    {
+        "name": "Pasay",
+        "isCentralTerminal": true,
+        "kind": "BUS_TERMINAL",
+        "region": "Metro Manila & Luzon",
+        "description": "EDSA/Tramo terminals — long-haul south to Bicol and the Visayas"
+    },
+    {
+        "name": "Puerto Princesa Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Metro Manila & Luzon",
+        "description": "Palawan ferries to Manila and regional island hopping"
+    },
+    {
+        "name": "Santa Rosa SRIT",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Metro Manila & Luzon",
+        "description": "Santa Rosa Integrated Transport Terminal, Laguna"
+    },
+    {
+        "name": "Valenzuela Gateway",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Metro Manila & Luzon",
+        "description": "VGBC — Pampanga, Bulacan, Tarlac, and Northern Luzon"
+    },
+    {
+        "name": "Butuan Terminal",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Mindanao",
+        "description": "Caraga hub — Surigao, Davao, Cagayan de Oro"
+    },
+    {
+        "name": "Cagayan de Oro Agora",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Mindanao",
+        "description": "Northern Mindanao hub — Iligan, Butuan, Bukidnon"
+    },
+    {
+        "name": "Cagayan de Oro Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Mindanao",
+        "description": "Macabalan — busiest Northern Mindanao passenger port; Cebu, Bohol, Manila"
+    },
+    {
+        "name": "Dapa Port (Siargao)",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Mindanao",
+        "description": "Siargao's main port — fastcrafts and ferries from Surigao and Cebu"
+    },
+    {
+        "name": "Dapitan Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Mindanao",
+        "description": "Pulauan — Zamboanga Peninsula links to Dumaguete and Cebu"
+    },
+    {
+        "name": "Davao DCOTT",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Mindanao",
+        "description": "Largest bus terminal in Mindanao — island-wide and long-haul to Metro Manila"
+    },
+    {
+        "name": "General Santos Bulaong",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Mindanao",
+        "description": "Main transport gateway for SOCCSKSARGEN"
+    },
+    {
+        "name": "Lipata Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Mindanao",
+        "description": "Surigao City — main RoRo entry from the Visayas and Luzon"
+    },
+    {
+        "name": "Mukas Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Mindanao",
+        "description": "RoRo across Panguil Bay (Lanao del Norte)"
+    },
+    {
+        "name": "Nasipit Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Mindanao",
+        "description": "Agusan del Norte — Butuan/Caraga ferries to Cebu and Bohol"
+    },
+    {
+        "name": "Ozamiz Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Mindanao",
+        "description": "RoRo across Panguil Bay (Misamis Occidental)"
+    },
+    {
+        "name": "Surigao Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Mindanao",
+        "description": "Surigao City boulevard port — boats to Siargao (Dapa) and Dinagat"
+    },
+    {
+        "name": "Zamboanga Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Mindanao",
+        "description": "Gateway for ferries to Basilan, Sulu, and Tawi-Tawi"
+    },
+    {
+        "name": "Zamboanga Terminal",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Mindanao",
+        "description": "Zamboanga Peninsula — Dipolog, Pagadian, Cotabato"
+    },
+    {
+        "name": "Bacolod Ceres Terminal",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Visayas",
+        "description": "Vallacar Transit hub — Negros island routes"
+    },
+    {
+        "name": "Bacolod Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Visayas",
+        "description": "BREDCO — fastcrafts across the Guimaras Strait to Iloilo; ferries to Manila"
+    },
+    {
+        "name": "Cebu North Bus Terminal",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Visayas",
+        "description": "Northern Cebu incl. bus-to-ferry links for Bantayan and Malapascua"
+    },
+    {
+        "name": "Cebu Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Visayas",
+        "description": "Piers 1, 3, 4 — fastcraft and RoRo to Bohol, Negros, Leyte, Mindanao, Manila"
+    },
+    {
+        "name": "Cebu South Bus Terminal",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Visayas",
+        "description": "Southern Cebu municipalities and RoRo connections to Negros"
+    },
+    {
+        "name": "Dumaguete Ceres Terminal",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Visayas",
+        "description": "Vallacar Transit hub — Negros Oriental routes"
+    },
+    {
+        "name": "Dumaguete Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Visayas",
+        "description": "Fastcrafts to Siquijor, Bohol, and Dapitan/Dipolog in Mindanao"
+    },
+    {
+        "name": "Iloilo Ceres Terminal",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Visayas",
+        "description": "Vallacar Transit hub — Panay island routes"
+    },
+    {
+        "name": "Iloilo Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Visayas",
+        "description": "Lapuz fastcraft terminal — Bacolod, Guimaras, Manila"
+    },
+    {
+        "name": "Liloan Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Visayas",
+        "description": "Southern Leyte RoRo gateway toward Mindanao (Surigao)"
+    },
+    {
+        "name": "Ormoc Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Visayas",
+        "description": "Fastest maritime link between Leyte and Cebu via fastcraft"
+    },
+    {
+        "name": "San Ricardo Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Visayas",
+        "description": "Southern Leyte RoRo gateway toward Mindanao (Surigao)"
+    },
+    {
+        "name": "Tacloban Terminal",
+        "isCentralTerminal": false,
+        "kind": "BUS_TERMINAL",
+        "region": "Visayas",
+        "description": "Eastern Visayas hub — Samar, Southern Leyte, northbound to Luzon"
+    },
+    {
+        "name": "Tagbilaran Port",
+        "isCentralTerminal": false,
+        "kind": "SEAPORT",
+        "region": "Visayas",
+        "description": "Bohol fastcraft hub — Cebu, Siquijor, Dumaguete"
+    }
+]

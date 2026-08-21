@@ -1,0 +1,103 @@
+[
+    {
+        "title": "Direct through-bus via the Nautical Highway",
+        "from": "Manila (NAIA)",
+        "to": "Boracay (Caticlan)",
+        "matchKeywords": [
+            "boracay",
+            "caticlan"
+        ],
+        "legs": [
+            {
+                "kind": "BUS",
+                "from": "PITX",
+                "to": "Caticlan",
+                "durationMinutes": 720,
+                "indicativeFarePhp": 1300.0,
+                "note": "One ticket — RoRo crossings via Mindoro included. From NAIA, Grab/taxi to PITX (~20 min); short boat transfer to Boracay at Caticlan jetty"
+            }
+        ]
+    },
+    {
+        "title": "Overnight ferry via Batangas",
+        "from": "Manila (NAIA)",
+        "to": "Boracay (Caticlan)",
+        "matchKeywords": [
+            "boracay",
+            "caticlan"
+        ],
+        "legs": [
+            {
+                "kind": "BUS",
+                "from": "PITX",
+                "to": "Batangas Port",
+                "durationMinutes": 150,
+                "indicativeFarePhp": 250.0,
+                "note": "From NAIA, take a Grab/taxi to PITX (~20 min)"
+            },
+            {
+                "kind": "FERRY",
+                "from": "Batangas Port",
+                "to": "Caticlan",
+                "durationMinutes": 540,
+                "indicativeFarePhp": 1550.0,
+                "note": "From Caticlan jetty, boat transfer to Boracay island (~15 min)"
+            }
+        ]
+    },
+    {
+        "title": "Direct through-bus + island hop",
+        "from": "Manila (NAIA)",
+        "to": "Siargao (Dapa)",
+        "matchKeywords": [
+            "siargao",
+            "dapa",
+            "surigao"
+        ],
+        "legs": [
+            {
+                "kind": "BUS",
+                "from": "Pasay",
+                "to": "Surigao",
+                "durationMinutes": 1800,
+                "indicativeFarePhp": 2600.0,
+                "note": "One ticket — the bus rides the RoRo ferries with you (Matnog–Allen and Liloan–Lipata), meal stops included. From NAIA, Grab/taxi to the Pasay terminals (~30 min)"
+            },
+            {
+                "kind": "FASTCRAFT",
+                "from": "Surigao Port",
+                "to": "Dapa Port (Siargao)",
+                "durationMinutes": 150,
+                "indicativeFarePhp": 350.0,
+                "note": "Tricycle from the bus terminal to Surigao boulevard port (~10 min)"
+            }
+        ]
+    },
+    {
+        "title": "Sail via Cebu",
+        "from": "Manila (NAIA)",
+        "to": "Siargao (Dapa)",
+        "matchKeywords": [
+            "siargao",
+            "dapa"
+        ],
+        "legs": [
+            {
+                "kind": "FERRY",
+                "from": "Manila North Harbor",
+                "to": "Cebu Port",
+                "durationMinutes": 1320,
+                "indicativeFarePhp": 2800.0,
+                "note": "2GO sails from Pier 4, North Harbor — taxi from NAIA ~45 min"
+            },
+            {
+                "kind": "FERRY",
+                "from": "Cebu Port",
+                "to": "Dapa Port (Siargao)",
+                "durationMinutes": 600,
+                "indicativeFarePhp": 1100.0,
+                "note": "Overnight sailing — arrives Dapa early morning"
+            }
+        ]
+    }
+]

@@ -1,0 +1,575 @@
+openapi: 3.0.3
+
+info:
+  title: RideVibe CRS API
+  version: 0.1.0-draft
+  description: |
+    Derived from the Android client's `CrsApiService` and DTOs, which are the
+    de-facto contract today. This spec is the source of truth for the backend
+    build (roadmap Phase 0) and for the app's contract tests.
+
+    **Status: draft.** It documents what the app already calls. It is not yet a
+    complete product API — see `x-open-questions` at the end of this file.
+
+    Drift between this file and `CrsApiService.kt` is a bug in one of them.
+
+servers:
+  - url: https://api.ridevibe.example.com
+    description: Placeholder — no deployed backend exists yet
+  - url: http://10.0.2.2:8080
+    description: Local dev, as seen from the Android emulator
+
+tags:
+  - name: Catalog
+    description: Reference data — terminals, classes
+  - name: Trips
+    description: Search and trip detail
+  - name: Seats
+    description: Seat map and hold lifecycle
+  - name: Bookings
+    description: Booking and ticket retrieval
+
+paths:
+
+  /v1/locations:
+    get:
+      tags: [Catalog]
+      summary: All selectable pickup/drop-off locations
+      description: Seed data for this endpoint is in `docs/seed/terminals.json`.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Location" }
+
+  /v1/bus-classes:
+    get:
+      tags: [Catalog]
+      summary: Bus classes available as a search filter
+      description: |
+        Returns bare enum names, not objects. Every value MUST be a member of
+        `BusClass` — the client calls `BusClass.valueOf()` with no fallback and
+        will throw on anything else.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/BusClass" }
+
+  /v1/trips:
+    get:
+      tags: [Trips]
+      summary: Search trips on a corridor for a date
+      parameters:
+        - name: origin
+          in: query
+          required: true
+          schema: { type: string }
+          example: PITX
+        - name: destination
+          in: query
+          required: true
+          schema: { type: string }
+          example: Baguio
+        - name: departureDate
+          in: query
+          required: true
+          description: Epoch milliseconds. Server matches the calendar date in PH time.
+          schema: { type: integer, format: int64 }
+        - name: busClass
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/BusClass" }
+      responses:
+        "200":
+          description: OK. Empty array when the corridor has no service.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Trip" }
+
+  /v1/trips/related:
+    get:
+      tags: [Trips]
+      summary: Cross-mode destination search (buses, ferries, fastcrafts)
+      description: |
+        **Routing hazard:** this static path collides with `/v1/trips/{tripId}`.
+        Register it before the parameterised route, or a trip whose id is
+        literally `related` becomes unreachable. Consider renaming to
+        `/v1/trips/search/related` in a future version.
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Free-text destination, e.g. "boracay".
+          schema: { type: string }
+        - name: departureDate
+          in: query
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: returnDate
+          in: query
+          required: false
+          description: Present for round-trip searches.
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Trip" }
+
+  /v1/trips/{tripId}:
+    get:
+      tags: [Trips]
+      summary: Single trip by id
+      parameters:
+        - $ref: "#/components/parameters/TripId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/journeys:
+    get:
+      tags: [Trips]
+      summary: Curated multi-leg tourist routes matching a destination
+      description: Seed data for this endpoint is in `docs/seed/journeys.json`.
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema: { type: string }
+          example: siargao
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Journey" }
+
+  /v1/trips/{tripId}/seatmap:
+    get:
+      tags: [Seats]
+      summary: Full seat inventory for a trip
+      description: |
+        Clients call this on first load and again after a WebSocket reconnect,
+        to resync before resuming the event stream.
+      parameters:
+        - $ref: "#/components/parameters/TripId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Seat" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/trips/{tripId}/seats/{seatId}/lock:
+    post:
+      tags: [Seats]
+      summary: Hold a seat for the current user
+      description: |
+        Must be idempotent for the holder, and must emit a `seat_status_changed`
+        event on the trip's socket channel.
+
+        **Unspecified: the hold TTL.** The client only ever learns an expiry via
+        `lockExpiresAtEpochMillis` on the socket event; this endpoint returns no
+        body. Roadmap Phase 0 targets a 10-minute server-swept expiry — decide
+        whether that belongs in this response.
+      parameters:
+        - $ref: "#/components/parameters/TripId"
+        - $ref: "#/components/parameters/SeatId"
+      responses:
+        "204": { description: Seat held }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Seat already held by another user, or already sold }
+
+  /v1/trips/{tripId}/seats/{seatId}/release:
+    post:
+      tags: [Seats]
+      summary: Release a seat held by the current user
+      parameters:
+        - $ref: "#/components/parameters/TripId"
+        - $ref: "#/components/parameters/SeatId"
+      responses:
+        "204": { description: Seat released, or was not held }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/trips/{tripId}/book:
+    post:
+      tags: [Bookings]
+      summary: Confirm a booking over held seats
+      parameters:
+        - $ref: "#/components/parameters/TripId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BookingRequest" }
+      responses:
+        "201":
+          description: Ticket issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
+        "409": { description: One or more seats are no longer held by this user }
+        "422": { description: Discount claimed without a verified ID reference }
+
+  /v1/tickets/{ticketId}:
+    get:
+      tags: [Bookings]
+      summary: Single ticket by id
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ticket" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/bookings:
+    get:
+      tags: [Bookings]
+      summary: All tickets belonging to the calling user
+      description: |
+        **Blocked on authentication.** There is no way to identify "the calling
+        user" — no auth scheme exists and the client sends no credentials. This
+        endpoint cannot be implemented correctly until auth lands.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Ticket" }
+        "401": { description: Not authenticated }
+
+components:
+
+  parameters:
+    TripId:
+      name: tripId
+      in: path
+      required: true
+      schema: { type: string }
+    SeatId:
+      name: seatId
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    NotFound:
+      description: No such resource.
+
+  schemas:
+
+    BusClass:
+      type: string
+      enum: [ORDINARY, DELUXE, LUXURY]
+      description: |
+        STRICT. The client calls `valueOf()` with no fallback — an unknown value
+        throws rather than degrading.
+
+    RideKind:
+      type: string
+      enum: [BUS, FERRY, FASTCRAFT]
+      default: BUS
+      description: LENIENT. Unknown values fall back to BUS on the client.
+
+    LocationKind:
+      type: string
+      enum: [BUS_TERMINAL, SEAPORT, CITY]
+      default: CITY
+      description: LENIENT. Unknown values fall back to CITY.
+
+    SeatStatus:
+      type: string
+      enum: [AVAILABLE, LOCKED, OCCUPIED, SELECTED]
+      description: |
+        LENIENT, and dangerously so — the client maps ANY unrecognised value to
+        AVAILABLE, including a misspelled OCCUPIED. Never send a status outside
+        this set.
+
+        SELECTED is a client-side display state (this user's own hold). The
+        server should send LOCKED and let the client decide.
+
+    PassengerType:
+      type: string
+      enum: [REGULAR, STUDENT, SENIOR_CITIZEN, PWD]
+      default: REGULAR
+      description: |
+        STRICT — unknown values throw on the client. Non-REGULAR types carry the
+        mandated 20% LTFRB discount and require a verified ID reference.
+
+    PaymentStatus:
+      type: string
+      enum: [PAID, CASH_ON_BOARD]
+      description: STRICT — unknown values throw on the client.
+
+    PaymentMethod:
+      type: string
+      enum: [GCASH, QR_PH, CARD, CASH_ON_BOARD]
+
+    Location:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, example: PITX }
+        isCentralTerminal: { type: boolean, default: false }
+        kind: { $ref: "#/components/schemas/LocationKind" }
+        region: { type: string, default: "", example: "Metro Manila & Luzon" }
+        description: { type: string, default: "" }
+
+    Trip:
+      type: object
+      required:
+        - id
+        - operatorName
+        - origin
+        - destination
+        - departureEpochMillis
+        - arrivalEpochMillis
+        - busClass
+        - farePhp
+        - availableSeatCount
+      properties:
+        id: { type: string }
+        operatorName: { type: string, example: Victory Liner }
+        origin: { type: string }
+        destination: { type: string }
+        departureEpochMillis: { type: integer, format: int64 }
+        arrivalEpochMillis: { type: integer, format: int64 }
+        busClass: { $ref: "#/components/schemas/BusClass" }
+        farePhp:
+          type: number
+          format: double
+          description: |
+            Floating point today. Roadmap Phase 5 replaces this with minor units
+            plus a currency code — docs/BACKLOG.md argues for doing that BEFORE
+            the schema is written rather than after.
+        availableSeatCount: { type: integer }
+        operatorRating:
+          type: number
+          format: double
+          nullable: true
+          description: |
+            Null where unknown. The seed corpus uses 4.2 as a placeholder for
+            workbook-imported services — do not import those as real ratings.
+        rideKind: { $ref: "#/components/schemas/RideKind" }
+
+    Seat:
+      type: object
+      required: [id, label, row, column, status]
+      properties:
+        id: { type: string }
+        label: { type: string, example: 12A }
+        row: { type: integer }
+        column: { type: integer }
+        status: { $ref: "#/components/schemas/SeatStatus" }
+        lockedByUserId: { type: string, nullable: true }
+
+    SeatStatusEvent:
+      type: object
+      description: WebSocket payload, not a REST response. See x-websocket below.
+      required: [tripId, seatId, status]
+      properties:
+        type: { type: string, default: seat_status_changed }
+        tripId: { type: string }
+        seatId: { type: string }
+        status: { $ref: "#/components/schemas/SeatStatus" }
+        lockedByUserId: { type: string, nullable: true }
+        lockExpiresAtEpochMillis: { type: integer, format: int64, nullable: true }
+
+    CoPassenger:
+      type: object
+      required: [firstName, lastName]
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        mobileNumber: { type: string, nullable: true }
+        type: { $ref: "#/components/schemas/PassengerType" }
+        discountIdImagePath: { type: string, nullable: true }
+
+    BookingRequest:
+      type: object
+      required: [seatIds, passengerFullName, passengerType, paymentMethod]
+      properties:
+        seatIds:
+          type: array
+          items: { type: string }
+          description: Must all be currently held by the calling user.
+        passengerFullName: { type: string }
+        passengerType: { $ref: "#/components/schemas/PassengerType" }
+        discountIdImagePath:
+          type: string
+          nullable: true
+          description: |
+            A LOCAL device path today — the server cannot resolve it. Discount
+            verification needs a real upload endpoint and a stored ID reference.
+            Roadmap Phase 3 Task B.
+        coPassengers:
+          type: array
+          items: { $ref: "#/components/schemas/CoPassenger" }
+          default: []
+        infantCount:
+          type: integer
+          default: 0
+          description: Lap-held, free of charge, no seat assigned.
+        paymentMethod: { $ref: "#/components/schemas/PaymentMethod" }
+        promoCode: { type: string, nullable: true }
+
+    Journey:
+      type: object
+      required: [title, from, to, legs]
+      properties:
+        title: { type: string }
+        from: { type: string }
+        to: { type: string }
+        legs:
+          type: array
+          items: { $ref: "#/components/schemas/JourneyLeg" }
+
+    JourneyLeg:
+      type: object
+      required: [kind, from, to, durationMinutes, indicativeFarePhp]
+      properties:
+        kind: { $ref: "#/components/schemas/RideKind" }
+        from: { type: string }
+        to: { type: string }
+        durationMinutes: { type: integer, format: int64 }
+        indicativeFarePhp: { type: number, format: double }
+        note:
+          type: string
+          nullable: true
+          description: Transfer tip shown under the leg.
+
+    Ticket:
+      type: object
+      required:
+        - id
+        - trip
+        - seatLabels
+        - passengerFullName
+        - passengerType
+        - paymentStatus
+        - qrPayload
+      properties:
+        id: { type: string }
+        trip: { $ref: "#/components/schemas/Trip" }
+        seatLabels:
+          type: array
+          items: { type: string }
+          description: One per booked seat; the first belongs to the primary passenger.
+        passengerFullName: { type: string }
+        passengerType: { $ref: "#/components/schemas/PassengerType" }
+        discountIdImagePath: { type: string, nullable: true }
+        coPassengers:
+          type: array
+          items: { $ref: "#/components/schemas/CoPassenger" }
+          default: []
+        infantCount: { type: integer, default: 0 }
+        paymentStatus: { $ref: "#/components/schemas/PaymentStatus" }
+        qrPayload:
+          type: string
+          description: |
+            Unsigned today — a forged QR would validate. Roadmap Phase 1 replaces
+            this with an HMAC-signed payload a conductor can verify offline.
+        reservationExpiresAtEpochMillis:
+          type: integer
+          format: int64
+          nullable: true
+          description: When an unpaid CASH_ON_BOARD hold lapses. Null once paid.
+
+x-websocket:
+  description: OpenAPI 3.0 cannot express WebSockets, so the channel is documented here.
+  url: "{WS_BASE_URL}/v1/trips/{tripId}/seat-events"
+  path_drift: |
+    The roadmap's Phase 0 prompt specifies `/trips/:id/inventory`. The client
+    calls `/v1/trips/{tripId}/seat-events`. Align them before building.
+  direction: server to client only
+  payload: "#/components/schemas/SeatStatusEvent"
+  client_behaviour: |
+    Messages that fail to parse are silently dropped. There is NO auto-reconnect
+    today — onFailure closes the flow and the screen stops updating. Roadmap
+    Phase 0 Task B item 2 adds backoff reconnect plus a seatmap resync.
+
+x-open-questions:
+  - id: auth
+    severity: blocker
+    detail: |
+      No authentication scheme exists anywhere — none here, no Authorization
+      header in the client, no token storage. GET /v1/bookings is user-scoped
+      and cannot be built without it. Sign-in is client-side only today: the
+      user authenticates with Google or Facebook and nothing downstream is told.
+      Decide the scheme (verify the provider token server-side, issue your own
+      session JWT) BEFORE building endpoints.
+  - id: unspecified-domains
+    severity: blocker
+    detail: |
+      Profile, Wallet, Support and Itinerary are mock-only, with no endpoints
+      here and none in the roadmap's Phase 0 schema. Roughly half the app has no
+      backend contract. Either design them, or explicitly scope them to stay on
+      mocks for v1 — the per-repository mock switch supports that.
+  - id: hold-semantics
+    severity: high
+    detail: |
+      This spec models holds as POST /seats/{id}/lock and /release, which is what
+      the app calls. The roadmap specifies POST /trips/:id/holds and
+      DELETE /holds/:id. Pick one. The roadmap's shape returns a hold id and
+      makes TTL explicit, which is the better design — but it means changing the
+      client.
+  - id: hold-ttl
+    severity: high
+    detail: |
+      TTL is never returned by REST, only hinted via the socket event. Decide
+      where it is authoritative.
+  - id: route-collision
+    severity: medium
+    detail: |
+      /v1/trips/related collides with /v1/trips/{tripId}. Order routes carefully
+      or rename.
+  - id: strict-enums
+    severity: medium
+    detail: |
+      busClass, passengerType and paymentStatus are parsed with valueOf() and no
+      fallback — an unrecognised value CRASHES the client rather than degrading.
+      rideKind, seat status and location kind fall back silently. Either make the
+      client uniformly lenient, or treat these three as a frozen contract the
+      backend must never violate.
+  - id: money-type
+    severity: medium
+    detail: |
+      Fares are doubles. Move to minor units plus a currency code before the
+      schema exists, not in Phase 5.
+  - id: discount-id-path
+    severity: medium
+    detail: |
+      discountIdImagePath is a device-local path the server cannot resolve.
+      Needs a real upload flow.
+  - id: unsigned-qr
+    severity: medium
+    detail: Ticket QR payloads are unsigned and forgeable. Roadmap Phase 1.

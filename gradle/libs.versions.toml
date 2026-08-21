@@ -62,12 +62,14 @@ zxing-android-embedded = { group = "com.journeyapps", name = "zxing-android-embe
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coilCompose" }
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
 facebook-login = { group = "com.facebook.android", name = "facebook-login", version.ref = "facebookLogin" }
+junit = { group = "junit", name = "junit", version = "4.13.2" }
 
 # Firebase — versions come from the BoM. 33.7.0 is the newest line compatible
 # with this project's Kotlin 1.9.24; BoM 34.x ships Kotlin 2.2 metadata and
 # breaks KSP here. Bump alongside a future Kotlin/Compose upgrade.
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version = "33.7.0" }
 firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics" }
+firebase-crashlytics = { group = "com.google.firebase", name = "firebase-crashlytics" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -77,3 +79,7 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ksp = { id = "com.google.devtools.ksp", version = "1.9.24-1.0.20" }
 google-services = { id = "com.google.gms.google-services", version = "4.5.0" }
+# Crashlytics uploads the R8 mapping file so beta stack traces stay readable.
+firebase-crashlytics = { id = "com.google.firebase.crashlytics", version = "3.0.2" }
+# App Distribution ships signed builds to tester groups (./gradlew appDistributionUploadRelease).
+firebase-appdistribution = { id = "com.google.firebase.appdistribution", version = "5.0.0" }

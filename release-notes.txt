@@ -1,0 +1,21 @@
+RideVibe 1.0.0-beta.1
+
+HEADS UP: this build runs on demo data. Trips, seat maps, fares, wallet
+balances and tickets are all simulated locally — nothing is booked, nothing
+is charged, and nothing syncs to a server. Please don't report the trip
+listings or prices themselves as wrong; do report anything that looks broken
+in how the app behaves.
+
+What to try:
+- Sign in with Google or Facebook
+- Search for a trip and pick a date
+- Choose seats on the seat map
+- Run through checkout to a ticket
+- Open the Scan tab and scan a ticket QR code
+
+What we most want to hear about:
+- Crashes or blank screens
+- Sign-in failures (tell us which provider and which device)
+- Anything slow, confusing, or visually broken on your screen size
+
+Send feedback to: alfred@afterbodyhealth.com
