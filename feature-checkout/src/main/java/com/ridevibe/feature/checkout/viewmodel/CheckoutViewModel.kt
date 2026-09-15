@@ -12,6 +12,7 @@ import com.ridevibe.core.domain.repository.ProfileRepository
 import com.ridevibe.core.domain.session.BookingCart
 import com.ridevibe.core.domain.usecase.ConfirmBookingUseCase
 import com.ridevibe.core.domain.usecase.GetTripUseCase
+import com.ridevibe.feature.checkout.ocr.DiscountIdImageStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -105,6 +106,7 @@ class CheckoutViewModel @Inject constructor(
     private val profileRepository: ProfileRepository,
     private val confirmBookingUseCase: ConfirmBookingUseCase,
     private val bookingCart: BookingCart,
+    private val discountIdImages: DiscountIdImageStore,
 ) : ViewModel() {
 
     private val tripId: String = checkNotNull(savedStateHandle["tripId"])
@@ -189,22 +191,38 @@ class CheckoutViewModel @Inject constructor(
         }
     }
 
+    init {
+        // A new checkout has no photos yet; anything present is an orphan.
+        discountIdImages.sweep()
+    }
+
     /** Opens the ID camera for one passenger at a time (-1 = primary). */
     fun onStartCapture(forIndex: Int) = _uiState.update { it.copy(capturingForIndex = forIndex) }
 
     fun onIdCaptured(imagePath: String) {
+        var replaced: String? = null
         _uiState.update { state ->
             when (val target = state.capturingForIndex) {
                 null -> state
-                -1 -> state.copy(discountIdImagePath = imagePath, capturingForIndex = null)
+                -1 -> {
+                    replaced = state.discountIdImagePath
+                    state.copy(discountIdImagePath = imagePath, capturingForIndex = null)
+                }
                 else -> state.copy(
                     coPassengers = state.coPassengers.mapIndexed { i, form ->
-                        if (i == target) form.copy(discountIdImagePath = imagePath) else form
+                        if (i == target) {
+                            replaced = form.discountIdImagePath
+                            form.copy(discountIdImagePath = imagePath)
+                        } else {
+                            form
+                        }
                     },
                     capturingForIndex = null,
                 )
             }
         }
+        // A retake orphans the previous photo — remove it now rather than at exit.
+        if (replaced != imagePath) discountIdImages.delete(replaced)
     }
 
     fun onPaymentMethodSelected(method: PaymentMethod) = _uiState.update { it.copy(paymentMethod = method) }
@@ -246,6 +264,9 @@ class CheckoutViewModel @Inject constructor(
                 }
                 return@launch
             }
+            // The outbound booking has consumed the discount claims; the photos
+            // are never uploaded, so nothing needs them from here on.
+            discountIdImages.sweep()
 
             val returnTrip = state.returnTrip
             if (returnTrip != null) {
@@ -283,5 +304,11 @@ class CheckoutViewModel @Inject constructor(
                 _uiState.update { it.copy(isSubmitting = false, confirmedTicketIds = outboundTicket.id) }
             }
         }
+    }
+
+    override fun onCleared() {
+        // Checkout abandoned (or finished) — the photos must not outlive it.
+        discountIdImages.sweep()
+        super.onCleared()
     }
 }

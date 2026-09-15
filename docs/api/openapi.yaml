@@ -199,7 +199,8 @@ paths:
       responses:
         "204": { description: Seat held }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: Seat already held by another user, or already sold }
+        "409": { description: Seat already held by another user, already sold, or this user is at the active-hold cap (12) }
+        "429": { description: Per-IP request ceiling exceeded — see x-rate-limits }
 
   /v1/trips/{tripId}/seats/{seatId}/release:
     post:
@@ -513,40 +514,62 @@ x-websocket:
   direction: server to client only
   payload: "#/components/schemas/SeatStatusEvent"
   client_behaviour: |
-    Messages that fail to parse are silently dropped. There is NO auto-reconnect
-    today — onFailure closes the flow and the screen stops updating. Roadmap
-    Phase 0 Task B item 2 adds backoff reconnect plus a seatmap resync.
+    Messages that fail to parse are silently dropped. On failure or server close
+    the client reconnects with exponential backoff (1s doubling, capped at 30s)
+    and re-fetches GET /v1/trips/{tripId}/seatmap before resuming, since events
+    missed while offline are not replayed. The client recognises its own holds
+    by comparing lockedByUserId with the X-User-Id response header it received on
+    its last authenticated call; those seats render as SELECTED locally.
+
+x-rate-limits:
+  description: |
+    Per-IP ceilings, in-memory per instance. Only these routes are limited;
+    every other endpoint is unthrottled. Exceeding one returns 429 with
+    x-ratelimit-* headers. Values live in the backend's plugins/rate-limit.ts.
+  lock: 300 per minute per IP — generous because PH mobile carriers use CGNAT
+  active_holds_per_user: 12 (returns 409, not 429)
+  auth_login_and_google: 10 per minute per IP
+  auth_email_code: 5 per 10 minutes per IP
+  auth_email_code_verify: 20 per 10 minutes per IP (plus 5 attempts per code)
 
 x-open-questions:
   - id: auth
     severity: blocker
+    status: interim
     detail: |
-      No authentication scheme exists anywhere — none here, no Authorization
-      header in the client, no token storage. GET /v1/bookings is user-scoped
-      and cannot be built without it. Sign-in is client-side only today: the
-      user authenticates with Google or Facebook and nothing downstream is told.
-      Decide the scheme (verify the provider token server-side, issue your own
-      session JWT) BEFORE building endpoints.
+      Passenger identity is the X-Device-Id header (a stable per-install UUID
+      the client attaches to every request). The server maps it to a users row
+      and echoes the resolved id in X-User-Id. This is scoping, not
+      authentication: anyone who knows a device id can act as that passenger,
+      so it MUST NOT ship to production. The seam is the backend's
+      src/auth.ts resolveUserId(); the client's Google/Facebook sign-in still
+      tells nothing downstream. Staff (admin/partner) sign-in is a separate,
+      real account system — see staff-openapi.yaml — and does not change who
+      the passenger is. Unifying the two (e.g. Firebase ID tokens for
+      passengers, matched to accounts by verified email) remains the decision
+      to make before go-live.
   - id: unspecified-domains
     severity: blocker
+    status: scoped-out-for-now
     detail: |
       Profile, Wallet, Support and Itinerary are mock-only, with no endpoints
-      here and none in the roadmap's Phase 0 schema. Roughly half the app has no
-      backend contract. Either design them, or explicitly scope them to stay on
-      mocks for v1 — the per-repository mock switch supports that.
+      here and none in the roadmap's Phase 0 schema. They stay on mocks via the
+      per-repository switch in RepositoryModule until designed; the roadmap's
+      Phase 4 wallet_ledger and Phase 3 profile/ID work are where they land.
   - id: hold-semantics
     severity: high
+    status: resolved
     detail: |
-      This spec models holds as POST /seats/{id}/lock and /release, which is what
-      the app calls. The roadmap specifies POST /trips/:id/holds and
-      DELETE /holds/:id. Pick one. The roadmap's shape returns a hold id and
-      makes TTL explicit, which is the better design — but it means changing the
-      client.
+      Decided: POST /seats/{id}/lock and /release, as implemented by both the
+      app and the backend. Holds carry no id; the seat id is the key and one
+      user may hold at most 12 seats at once (409 beyond that).
   - id: hold-ttl
     severity: high
     detail: |
-      TTL is never returned by REST, only hinted via the socket event. Decide
-      where it is authoritative.
+      TTL is 10 minutes server-side, swept lazily on read and actively every
+      minute. It is still never returned by REST — the client learns expiry
+      only via lockExpiresAtEpochMillis on the socket event and otherwise
+      assumes 10 minutes. Decide whether the lock response should carry it.
   - id: route-collision
     severity: medium
     detail: |

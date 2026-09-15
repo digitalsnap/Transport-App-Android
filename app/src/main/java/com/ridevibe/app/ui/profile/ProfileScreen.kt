@@ -76,6 +76,8 @@ import java.util.Locale
 @Composable
 fun ProfileScreen(
     onBack: () -> Unit,
+    /** Opens the staff console (admin / partner dashboards). */
+    onOpenStaffConsole: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -258,6 +260,23 @@ fun ProfileScreen(
                 onPickCertificate = { certificatePicker.launch("image/*") },
                 onAdd = viewModel::addVehicle,
             )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
+
+            SectionTitle("Staff access")
+            Text(
+                "For RideVibe admins and partner operators: bookings support, trips, services and manifests.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onOpenStaffConsole,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(24.dp),
+            ) {
+                Text("Open staff console", fontWeight = FontWeight.Bold)
+            }
 
             Spacer(modifier = Modifier.height(32.dp))
         }

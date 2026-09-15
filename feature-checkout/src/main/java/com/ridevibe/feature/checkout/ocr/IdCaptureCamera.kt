@@ -134,7 +134,7 @@ private fun captureAndRecognize(
     imageCapture: ImageCapture,
     onCaptured: (imagePath: String, recognizedText: String) -> Unit,
 ) {
-    val outputFile = File(context.cacheDir, "discount_id_${System.currentTimeMillis()}.jpg")
+    val outputFile = File(context.cacheDir, "${DiscountIdImageStore.FILE_PREFIX}${System.currentTimeMillis()}.jpg")
     val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
 
     imageCapture.takePicture(

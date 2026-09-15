@@ -25,6 +25,7 @@ import com.ridevibe.app.ui.wallet.WalletScreen
 import com.ridevibe.app.ui.welcome.WelcomeScreen
 import com.ridevibe.core.domain.model.BusClass
 import com.ridevibe.core.domain.model.RideKind
+import com.ridevibe.feature.admin.ui.StaffConsoleRoot
 import com.ridevibe.feature.checkout.ui.CheckoutScreen
 import com.ridevibe.feature.search.ui.ExploreScreen
 import com.ridevibe.feature.search.ui.HomeScreen
@@ -39,6 +40,10 @@ private object Routes {
     const val BOOKINGS = "bookings"
     const val ITINERARY = "itinerary"
     const val WALLET = "wallet"
+
+    // Staff console (admin + partner dashboards consolidated into the app). Has its
+    // own tabs, so the passenger bottom nav is hidden while it is showing.
+    const val STAFF = "staff"
 
     // Support: the Chat tab lands on topic triage; the live thread is a
     // separate destination that carries the chosen topic + booking context.
@@ -105,7 +110,7 @@ fun RideVibeNavGraph(navController: NavHostController) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            if (currentRoute != Routes.WELCOME) {
+            if (currentRoute != Routes.WELCOME && currentRoute != Routes.STAFF) {
                 RideVibeBottomNav(
                     selectedTab = selectedTab,
                     onHomeClick = {
@@ -257,7 +262,14 @@ fun RideVibeNavGraph(navController: NavHostController) {
         }
 
         composable(Routes.PROFILE) {
-            ProfileScreen(onBack = { navController.popBackStack() })
+            ProfileScreen(
+                onBack = { navController.popBackStack() },
+                onOpenStaffConsole = { navController.navigate(Routes.STAFF) },
+            )
+        }
+
+        composable(Routes.STAFF) {
+            StaffConsoleRoot(onExit = { navController.popBackStack() })
         }
 
         composable(

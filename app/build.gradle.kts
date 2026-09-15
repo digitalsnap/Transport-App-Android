@@ -111,6 +111,7 @@ dependencies {
     implementation(project(":feature-seatmap"))
     implementation(project(":feature-checkout"))
     implementation(project(":feature-ticket"))
+    implementation(project(":feature-admin"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

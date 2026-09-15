@@ -1,20 +1,29 @@
 package com.ridevibe.core.network.di
 
+import com.ridevibe.core.domain.repository.AdminRepository
 import com.ridevibe.core.domain.repository.CheckoutRepository
 import com.ridevibe.core.domain.repository.ItineraryRepository
+import com.ridevibe.core.domain.repository.PartnerRepository
 import com.ridevibe.core.domain.repository.ProfileRepository
 import com.ridevibe.core.domain.repository.SeatRepository
+import com.ridevibe.core.domain.repository.StaffAuthRepository
 import com.ridevibe.core.domain.repository.SupportRepository
 import com.ridevibe.core.domain.repository.TripRepository
 import com.ridevibe.core.domain.repository.WalletRepository
+import com.ridevibe.core.network.AdminRepositoryImpl
 import com.ridevibe.core.network.BuildConfig
 import com.ridevibe.core.network.CheckoutRepositoryImpl
+import com.ridevibe.core.network.PartnerRepositoryImpl
 import com.ridevibe.core.network.SeatRepositoryImpl
+import com.ridevibe.core.network.StaffAuthRepositoryImpl
 import com.ridevibe.core.network.TripRepositoryImpl
+import com.ridevibe.core.network.mock.MockAdminRepository
 import com.ridevibe.core.network.mock.MockCheckoutRepository
 import com.ridevibe.core.network.mock.MockItineraryRepository
+import com.ridevibe.core.network.mock.MockPartnerRepository
 import com.ridevibe.core.network.mock.MockProfileRepository
 import com.ridevibe.core.network.mock.MockSeatRepository
+import com.ridevibe.core.network.mock.MockStaffAuthRepository
 import com.ridevibe.core.network.mock.MockSupportRepository
 import com.ridevibe.core.network.mock.MockWalletRepository
 import com.ridevibe.core.network.mock.MockTripRepository
@@ -87,4 +96,30 @@ object RepositoryModule {
     fun provideItineraryRepository(
         mock: Provider<MockItineraryRepository>,
     ): ItineraryRepository = mock.get() // TODO: sync itineraries to the account once the CRS supports them
+
+    // ── Staff console (admin + partner) ──────────────────────────────────────
+    // Same switch. The mocks mirror the backend's dev accounts
+    // (admin@admin.com / admin, partner@partner.com / partner) and persist the
+    // session through the same StaffSessionStore as the real implementation.
+
+    @Provides
+    @Singleton
+    fun provideStaffAuthRepository(
+        real: Provider<StaffAuthRepositoryImpl>,
+        mock: Provider<MockStaffAuthRepository>,
+    ): StaffAuthRepository = if (USE_MOCK_DATA) mock.get() else real.get()
+
+    @Provides
+    @Singleton
+    fun provideAdminRepository(
+        real: Provider<AdminRepositoryImpl>,
+        mock: Provider<MockAdminRepository>,
+    ): AdminRepository = if (USE_MOCK_DATA) mock.get() else real.get()
+
+    @Provides
+    @Singleton
+    fun providePartnerRepository(
+        real: Provider<PartnerRepositoryImpl>,
+        mock: Provider<MockPartnerRepository>,
+    ): PartnerRepository = if (USE_MOCK_DATA) mock.get() else real.get()
 }

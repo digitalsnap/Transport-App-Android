@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ridevibe.core.domain.model.Seat
 import com.ridevibe.core.domain.model.SeatStatus
+import com.ridevibe.core.domain.model.SeatStatusEvent
 import com.ridevibe.core.domain.model.Trip
 import com.ridevibe.core.domain.usecase.GetTripUseCase
 import com.ridevibe.core.domain.usecase.ObserveSeatMapUseCase
@@ -12,6 +13,7 @@ import com.ridevibe.core.domain.usecase.ReleaseSeatUseCase
 import com.ridevibe.core.domain.usecase.SelectSeatUseCase
 import com.ridevibe.core.domain.usecase.applySeatEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,7 +23,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.Collections
 import javax.inject.Inject
 
 data class SeatMapUiState(
@@ -39,6 +43,7 @@ data class SeatMapUiState(
 }
 
 private const val HOLD_DURATION_SECONDS = 10 * 60 // 10-minute seat hold
+private const val MAX_RECONNECT_DELAY_MILLIS = 30_000L
 
 @HiltViewModel
 class SeatMapViewModel @Inject constructor(
@@ -58,6 +63,13 @@ class SeatMapViewModel @Inject constructor(
 
     private var holdCountdownJob: Job? = null
 
+    /**
+     * Seats this screen is releasing on purpose. The server echoes each
+     * release as an AVAILABLE event; without this the echo would look like a
+     * hold lost to expiry and raise a spurious warning.
+     */
+    private val pendingReleases: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
+
     init {
         load()
         listenForSeatEvents()
@@ -76,17 +88,92 @@ class SeatMapViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = false, errorMessage = throwable.message ?: "Unable to load seats") }
                 return@launch
             }
+            val seats = seatsResult.getOrDefault(emptyList())
+            // Seats the data layer marked SELECTED are this user's live holds
+            // (recognised via lockedByUserId) — e.g. after the screen was
+            // recreated mid-selection. Restore them into the selection so they
+            // stay deselectable and count toward the required seats.
+            val restored = seats.filter { it.status == SeatStatus.SELECTED }.map { it.id }
             _uiState.update {
-                it.copy(isLoading = false, trip = tripResult.getOrNull(), seats = seatsResult.getOrDefault(emptyList()))
+                it.copy(
+                    isLoading = false,
+                    trip = tripResult.getOrNull(),
+                    seats = seats,
+                    selectedSeatIds = (it.selectedSeatIds + restored).distinct(),
+                )
+            }
+            if (restored.isNotEmpty() && holdCountdownJob?.isActive != true) startHoldCountdown()
+        }
+    }
+
+    /**
+     * Live seat events with reconnect. The socket flow ends on any network
+     * failure (and when the server closes it); without this loop the screen
+     * would silently stop updating. Each reconnect first re-fetches the seat
+     * map, because events missed while offline are gone for good.
+     */
+    private fun listenForSeatEvents() {
+        viewModelScope.launch {
+            var attempt = 0
+            while (isActive) {
+                try {
+                    observeSeatMapUseCase.observeEvents(tripId).collect { event ->
+                        attempt = 0
+                        _uiState.update { state -> state.copy(seats = applySeatEvent(state.seats, event)) }
+                        onOwnHoldLostIfNeeded(event)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // Connection failed or dropped — fall through to the backoff.
+                }
+                attempt++
+                delay(reconnectDelayMillis(attempt))
+                resyncSeatMap()
             }
         }
     }
 
-    private fun listenForSeatEvents() {
-        viewModelScope.launch {
-            observeSeatMapUseCase.observeEvents(tripId).collect { event ->
-                _uiState.update { state -> state.copy(seats = applySeatEvent(state.seats, event)) }
+    /** Exponential backoff: 1s, 2s, 4s … capped at 30s. */
+    private fun reconnectDelayMillis(attempt: Int): Long =
+        (1_000L shl (attempt - 1).coerceIn(0, 5)).coerceAtMost(MAX_RECONNECT_DELAY_MILLIS)
+
+    private suspend fun resyncSeatMap() {
+        runCatching { observeSeatMapUseCase.getInitialSeatMap(tripId) }.onSuccess { seats ->
+            _uiState.update { state ->
+                // Holds the server no longer knows about were lost while offline.
+                val stillHeld = state.selectedSeatIds.filter { id ->
+                    seats.firstOrNull { it.id == id }?.status == SeatStatus.SELECTED
+                }
+                if (stillHeld.isEmpty()) holdCountdownJob?.cancel()
+                state.copy(
+                    seats = seats,
+                    selectedSeatIds = stillHeld,
+                    holdSecondsRemaining = if (stillHeld.isEmpty()) null else state.holdSecondsRemaining,
+                )
             }
+        }
+    }
+
+    /**
+     * A selected seat the server now reports in any state other than "held by
+     * me" is no longer ours: the hold expired server-side, or support released
+     * it. Drop it from the selection so checkout cannot proceed with a seat we
+     * do not hold. Releases this screen initiated itself are expected echoes.
+     */
+    private fun onOwnHoldLostIfNeeded(event: SeatStatusEvent) {
+        if (event.status == SeatStatus.SELECTED) return
+        if (pendingReleases.remove(event.seatId)) return
+        _uiState.update { state ->
+            if (event.seatId !in state.selectedSeatIds) return@update state
+            val remaining = state.selectedSeatIds - event.seatId
+            if (remaining.isEmpty()) holdCountdownJob?.cancel()
+            val label = state.seats.firstOrNull { it.id == event.seatId }?.label ?: event.seatId
+            state.copy(
+                selectedSeatIds = remaining,
+                holdSecondsRemaining = if (remaining.isEmpty()) null else state.holdSecondsRemaining,
+                errorMessage = "Seat $label is no longer held for you.",
+            )
         }
     }
 
@@ -118,7 +205,7 @@ class SeatMapViewModel @Inject constructor(
                 .onSuccess {
                     _uiState.update { state ->
                         state.copy(
-                            selectedSeatIds = state.selectedSeatIds + seat.id,
+                            selectedSeatIds = (state.selectedSeatIds + seat.id).distinct(),
                             errorMessage = null,
                             seats = state.seats.map {
                                 if (it.id == seat.id) it.copy(status = SeatStatus.SELECTED) else it
@@ -135,6 +222,7 @@ class SeatMapViewModel @Inject constructor(
 
     private fun deselectSeat(seat: Seat) {
         viewModelScope.launch {
+            pendingReleases.add(seat.id)
             releaseSeatUseCase(tripId, seat.id)
             _uiState.update { state ->
                 val remaining = state.selectedSeatIds - seat.id
@@ -165,6 +253,7 @@ class SeatMapViewModel @Inject constructor(
     private fun releaseAllSeats() {
         viewModelScope.launch {
             val held = _uiState.value.selectedSeatIds
+            pendingReleases.addAll(held)
             held.forEach { releaseSeatUseCase(tripId, it) }
             _uiState.update { state ->
                 state.copy(

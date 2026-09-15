@@ -93,7 +93,8 @@ blockers**, recorded in `x-open-questions`:
   unknown value; `rideKind`, seat `status`, location `kind` degrade silently
 - hold TTL is never returned by REST, only hinted on the socket event
 - WebSocket path drift: client uses `/seat-events`, roadmap says `/inventory`
-- no auto-reconnect on the socket today
+  (resolved: backend serves `/seat-events`)
+- ~~no auto-reconnect on the socket today~~ (done — see Consolidation below)
 
 Still worth doing: automate the client↔spec check in CI (`docs/api/README.md`).
 
@@ -114,17 +115,67 @@ gets harder with every screen added. Good background task.
 
 ---
 
-## Phase 0 — Real backend (revised)
+## Phase 0 — Real backend ✅ LANDED (separate repo)
 
-Unchanged in intent; corrected in scope. Before starting:
+The CRS backend exists: Fastify + Postgres at
+`D:\The Bus App\Database-RideVibe\Database-RideVibe-App` (its own git repo, kept
+separate on purpose for commit/push protection). It implements all 12 `/v1`
+routes and the seat-events socket, with a contract test that fails if either
+side drifts from `docs/api/openapi.yaml` (mirrored there as `spec/openapi.yaml`).
 
-1. Decide the module shape — create `core-data`, or keep real impls in
-   `core-network` and update the roadmap prompt.
-2. Align on hold semantics: `seats/{id}/lock` (app today) vs `POST /holds`
-   (roadmap). Pick one.
-3. Design the four missing domains, or explicitly scope them out of v1 and leave
-   them on mocks — which the BuildConfig switch now supports per-repository.
-4. Decide auth before endpoints, not after.
+The four "before starting" decisions, as taken:
+
+1. **Module shape** — real impls stay in `core-network`; there is no `core-data`.
+2. **Hold semantics** — `POST /seats/{id}/lock` and `/release`, no hold id, 10-minute
+   TTL, max 12 live holds per user (409 beyond).
+3. **Missing domains** — Profile, Wallet, Support, Itinerary stay on mocks via
+   the per-repository switch until designed (roadmap Phases 3–4).
+4. **Auth** — passengers are scoped by `X-Device-Id` (interim, not secure, must
+   not ship); staff use real email/password accounts with 7-day sessions. See
+   `x-open-questions.auth` in the spec for the remaining unification decision.
+
+---
+
+## Consolidation — 2026-09-03 ✅ DONE
+
+The backend's two web dashboards (`/admin`, `/partner`) are now also in the app
+as the **staff console** (`feature-admin`), reached from Profile → "Open staff
+console". Two repos, one product:
+
+- **Staff contract.** `docs/api/staff-openapi.yaml` (mirrored as the backend's
+  `spec/staff-openapi.yaml`) documents `/auth`, `/admin/api`, `/partner/api` —
+  36 operations. A second backend contract test locks it both ways, exactly like
+  the passenger spec.
+- **Data layer.** `StaffApiService` + `StaffAuthRepository` / `AdminRepository` /
+  `PartnerRepository` in `core-network`, session persisted in
+  EncryptedSharedPreferences, `x-admin-token` / `x-partner-token` attached only
+  on staff routes. Mock implementations keep the console demoable offline
+  (`admin@admin.com` / `admin`, `partner@partner.com` / `partner`, matching the
+  backend's dev accounts).
+- **Passenger client gaps closed.** `X-Device-Id` interceptor (401s gone);
+  `X-User-Id` captured so the seat map recognises its own holds after a reload;
+  409/429 bodies surface as readable messages; the seat-events socket reconnects
+  with backoff and resyncs the seat map.
+- **Backend copies reconciled.** The `Database-RideVibe-App-main` folder's
+  uncommitted work (rate limiting, 12-hold cap, admin API stripped of device
+  ids, new tests) was applied onto the clean repo. That folder is now
+  superseded and can be deleted once the merged working tree is committed.
+
+### Still open after consolidation
+
+- **Identity unification** (blocker before go-live) — see `x-open-questions.auth`.
+- **Google sign-in for staff in the app** — the backend verifies a *web* client
+  ID token; the app would need `requestIdToken(webClientId)` and to post it to
+  `/auth/google`. Email/password and emailed key work today.
+- **Release build** points at a placeholder host; the staff console in a release
+  APK needs a deployed backend.
+- **Money as doubles** — now multiplied across admin analytics; still the
+  cheapest time to fix is before more schema lands.
+- **Run the backend suite** once Docker is available: `pnpm test` in the backend
+  repo (the two contract tests, seat-hold concurrency, privacy and rate-limit
+  suites).
 
 Phases 1–5 stand as written in `ridevibe-roadmap.md`, minus the Money work
-promoted to "unblocked now" above.
+promoted to "unblocked now" above and the operator-dashboard/conductor-role work
+that the staff console now covers in part (roadmap Phase 3 Task A item 1, Phase 4
+Task C).

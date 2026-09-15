@@ -28,6 +28,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlin.random.Random
 import javax.inject.Inject
@@ -85,7 +86,7 @@ class MockSeatRepository @Inject constructor(
 
     override suspend fun getSeatMap(tripId: String): List<Seat> {
         delay(FAKE_LATENCY_MS)
-        return db.seatMap(tripId)
+        return db.seatMap(tripId).map { it.asSeenByMe() }
     }
 
     /**
@@ -96,7 +97,15 @@ class MockSeatRepository @Inject constructor(
     override fun observeSeatEvents(tripId: String): Flow<SeatStatusEvent> = merge(
         db.seatEvents.filter { it.tripId == tripId },
         simulatedOtherPassenger(tripId),
-    )
+    ).map { it.asSeenByMe() }
+
+    // Same rule as SeatRepositoryImpl: a lock held by this user is shown as
+    // SELECTED, so the seat map recognises its own holds on reload.
+    private fun Seat.asSeenByMe(): Seat =
+        if (status == SeatStatus.LOCKED && lockedByUserId == CURRENT_USER_ID) copy(status = SeatStatus.SELECTED) else this
+
+    private fun SeatStatusEvent.asSeenByMe(): SeatStatusEvent =
+        if (status == SeatStatus.LOCKED && lockedByUserId == CURRENT_USER_ID) copy(status = SeatStatus.SELECTED) else this
 
     private fun simulatedOtherPassenger(tripId: String): Flow<SeatStatusEvent> = flow {
         while (true) {

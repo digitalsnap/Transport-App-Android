@@ -2,6 +2,9 @@ package com.ridevibe.core.network.di
 
 import com.ridevibe.core.network.BuildConfig
 import com.ridevibe.core.network.api.CrsApiService
+import com.ridevibe.core.network.api.StaffApiService
+import com.ridevibe.core.network.auth.DeviceIdInterceptor
+import com.ridevibe.core.network.auth.StaffTokenInterceptor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -37,10 +40,20 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
+    fun provideOkHttpClient(
+        deviceIdInterceptor: DeviceIdInterceptor,
+        staffTokenInterceptor: StaffTokenInterceptor,
+    ): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS) // no timeout — WebSocket stays open
         .pingInterval(20, TimeUnit.SECONDS)
+        // Identifies the caller to the CRS. Without it, hold/book/my-bookings
+        // return 401. Added before logging so it is visible when logging is on.
+        .addInterceptor(deviceIdInterceptor)
+        // Staff console: adds x-admin-token / x-partner-token on /auth, /admin
+        // and /partner only (never /v1), and drops an expired/revoked session
+        // on 401. Also before logging so the header shows up in debug traces.
+        .addInterceptor(staffTokenInterceptor)
         .apply {
             // Never log HTTP traffic in release builds — requests can carry
             // passenger names, contact numbers, and booking references.
@@ -61,4 +74,9 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideCrsApiService(retrofit: Retrofit): CrsApiService = retrofit.create(CrsApiService::class.java)
+
+    /** Same Retrofit/OkHttp stack as the passenger API — same base URL, same interceptors. */
+    @Provides
+    @Singleton
+    fun provideStaffApiService(retrofit: Retrofit): StaffApiService = retrofit.create(StaffApiService::class.java)
 }
