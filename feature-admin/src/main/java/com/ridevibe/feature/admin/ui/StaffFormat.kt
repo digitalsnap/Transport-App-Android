@@ -1,61 +1,28 @@
 package com.ridevibe.feature.admin.ui
 
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
+import com.ridevibe.core.domain.format.PhTime
 import java.util.Locale
-import java.util.TimeZone
 
 /**
- * Formatting for the staff console. Everything is reported in Philippine time,
- * exactly like the web dashboards (`toLocaleString("en-PH", { timeZone: "Asia/Manila" })`).
- * minSdk 24 without desugaring: `java.util.Calendar` / `SimpleDateFormat` only.
+ * Formatting for the staff console. Money and calendar rules live in
+ * core-domain (`formatPhp`, `PhTime`) so the console agrees with the rider
+ * app and the web dashboards; what remains here is dashboard-only presentation
+ * (em dashes for missing values, truncated ids, hour lists).
  */
-val PhTimeZone: TimeZone = TimeZone.getTimeZone("Asia/Manila")
-
-private const val ISO_DAY_PATTERN = "yyyy-MM-dd"
-
-private fun phFormat(pattern: String): SimpleDateFormat =
-    SimpleDateFormat(pattern, Locale.US).apply { timeZone = PhTimeZone }
 
 /** `₱1,234.00`; null renders as an em dash like the dashboards do. */
 fun formatPhp(amount: Double?): String =
-    if (amount == null) "—" else String.format(Locale.US, "₱%,.2f", amount)
+    if (amount == null) "—" else com.ridevibe.core.domain.format.formatPhp(amount)
 
 /** `Sep 3, 4:30 PM` in Asia/Manila; null renders as an em dash. */
 fun formatPhDateTime(epochMillis: Long?): String =
-    if (epochMillis == null) "—" else phFormat("MMM d, h:mm a").format(Date(epochMillis))
+    if (epochMillis == null) "—" else PhTime.formatDateTime(epochMillis, "MMM d, h:mm a")
 
-/** `yyyy-MM-dd` for the PH calendar day containing [epochMillis]. */
-fun formatPhDate(epochMillis: Long): String = phFormat(ISO_DAY_PATTERN).format(Date(epochMillis))
-
-/** Today's PH calendar date as `yyyy-MM-dd` — the default for every date selector. */
-fun todayPhIso(): String = formatPhDate(System.currentTimeMillis())
-
-/** Adds [days] (negative allowed) to an ISO day using PH calendar arithmetic. */
-fun shiftIsoDay(isoDay: String, days: Int): String {
-    val calendar = isoDayToCalendar(isoDay)
-    calendar.add(Calendar.DAY_OF_MONTH, days)
-    return phFormat(ISO_DAY_PATTERN).format(calendar.time)
-}
-
-/** `Mon`, `Tue`, … for the chart axis. */
-fun weekdayLabel(isoDay: String): String = phFormat("EEE").format(isoDayToCalendar(isoDay).time)
+/** `4:30 PM` in Asia/Manila — for rows that already say which day. */
+fun formatPhTime(epochMillis: Long): String = PhTime.formatDateTime(epochMillis, "h:mm a")
 
 /** `Wed, Sep 3 2026` for date-selector captions. */
-fun formatIsoDayLong(isoDay: String): String = phFormat("EEE, MMM d yyyy").format(isoDayToCalendar(isoDay).time)
-
-fun isTodayPh(isoDay: String): Boolean = isoDay == todayPhIso()
-
-private fun isoDayToCalendar(isoDay: String): Calendar {
-    val calendar = Calendar.getInstance(PhTimeZone, Locale.US)
-    val parts = isoDay.split("-").mapNotNull { it.toIntOrNull() }
-    if (parts.size == 3 && parts[1] in 1..12 && parts[2] in 1..31) {
-        calendar.clear()
-        calendar.set(parts[0], parts[1] - 1, parts[2])
-    }
-    return calendar
-}
+fun formatIsoDayLong(isoDay: String): String = PhTime.formatIsoDay(isoDay, "EEE, MMM d yyyy")
 
 /** `5h30m` — matches the dashboards' `Math.floor(m/60)h + mm`. */
 fun formatDuration(minutes: Int): String =
@@ -77,9 +44,6 @@ fun shortId(id: String, keep: Int = 12): String = if (id.length <= keep) id else
 /** `SENIOR_CITIZEN` → `Senior citizen`. */
 fun humanize(enumName: String): String =
     enumName.lowercase(Locale.US).replace('_', ' ').replaceFirstChar { it.titlecase(Locale.US) }
-
-/** `HH:mm`, 24-hour, as `addExtraTrip` requires. */
-fun isValidTimeHm(value: String): Boolean = Regex("^([01]\\d|2[0-3]):[0-5]\\d$").matches(value)
 
 fun formatRating(rating: Double?): String =
     if (rating == null) "—" else String.format(Locale.US, "★ %.1f", rating)

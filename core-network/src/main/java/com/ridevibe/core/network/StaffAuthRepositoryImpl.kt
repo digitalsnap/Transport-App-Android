@@ -53,16 +53,23 @@ class StaffAuthRepositoryImpl @Inject constructor(
         }
 
     /**
-     * Re-validates the persisted token with `/auth/me`. A 401 means the server
-     * no longer knows the session (expired or revoked): the store is cleared and
-     * the call SUCCEEDS with null so the UI simply shows sign-in. Any other
-     * failure (offline, 5xx) keeps the persisted session and fails the Result.
+     * Re-validates the persisted token with `/auth/me`. A session whose
+     * server-side lifetime has already passed is dropped without a round
+     * trip (the server would 401 anyway, and offline it would otherwise
+     * linger forever). A 401 means the server no longer knows the session
+     * (expired or revoked): the store is cleared and the call SUCCEEDS with
+     * null so the UI simply shows sign-in. Any other failure (offline, 5xx)
+     * keeps the persisted session and fails the Result.
      */
     override suspend fun refreshSession(): Result<StaffSession?> {
         val current = sessionStore.session.value ?: return Result.success(null)
+        if (sessionStore.isExpired()) {
+            sessionStore.clear()
+            return Result.success(null)
+        }
         return apiResult { api.me() }.fold(
             onSuccess = { me ->
-                val refreshed = me.toDomain(token = current.token)
+                val refreshed = me.toDomain(token = current.token, expiresAtEpochMillis = current.expiresAtEpochMillis)
                 sessionStore.save(refreshed)
                 Result.success(refreshed)
             },

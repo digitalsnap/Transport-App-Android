@@ -50,9 +50,9 @@ paths:
       tags: [Catalog]
       summary: Bus classes available as a search filter
       description: |
-        Returns bare enum names, not objects. Every value MUST be a member of
-        `BusClass` — the client calls `BusClass.valueOf()` with no fallback and
-        will throw on anything else.
+        Returns bare enum names, not objects. Every value SHOULD be a member of
+        `BusClass`; the client maps anything else to ORDINARY (and logs it), so
+        an unknown class silently loses its filter chip rather than crashing.
       responses:
         "200":
           description: OK
@@ -189,15 +189,21 @@ paths:
         Must be idempotent for the holder, and must emit a `seat_status_changed`
         event on the trip's socket channel.
 
-        **Unspecified: the hold TTL.** The client only ever learns an expiry via
-        `lockExpiresAtEpochMillis` on the socket event; this endpoint returns no
-        body. Roadmap Phase 0 targets a 10-minute server-swept expiry — decide
-        whether that belongs in this response.
+        **Hold TTL.** The server MAY answer `200` with a `SeatLockResponse`
+        carrying `lockExpiresAtEpochMillis`; the client then shows a countdown
+        to that instant. A `204` with no body is equally valid and means "held,
+        assume the documented 10-minute TTL". Either way the socket event still
+        carries the expiry.
       parameters:
         - $ref: "#/components/parameters/TripId"
         - $ref: "#/components/parameters/SeatId"
       responses:
-        "204": { description: Seat held }
+        "200":
+          description: Seat held; the body states when the hold lapses.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SeatLockResponse" }
+        "204": { description: Seat held (no body — 10-minute TTL applies) }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: Seat already held by another user, already sold, or this user is at the active-hold cap (12) }
         "429": { description: Per-IP request ceiling exceeded — see x-rate-limits }
@@ -291,9 +297,7 @@ components:
     BusClass:
       type: string
       enum: [ORDINARY, DELUXE, LUXURY]
-      description: |
-        STRICT. The client calls `valueOf()` with no fallback — an unknown value
-        throws rather than degrading.
+      description: LENIENT. Unknown values fall back to ORDINARY on the client (logged).
 
     RideKind:
       type: string
@@ -311,9 +315,9 @@ components:
       type: string
       enum: [AVAILABLE, LOCKED, OCCUPIED, SELECTED]
       description: |
-        LENIENT, and dangerously so — the client maps ANY unrecognised value to
-        AVAILABLE, including a misspelled OCCUPIED. Never send a status outside
-        this set.
+        LENIENT in the safe direction: the client maps ANY unrecognised value to
+        OCCUPIED (unbookable) and logs it, so a misspelled status can never put
+        a seat on sale twice.
 
         SELECTED is a client-side display state (this user's own hold). The
         server should send LOCKED and let the client decide.
@@ -323,13 +327,27 @@ components:
       enum: [REGULAR, STUDENT, SENIOR_CITIZEN, PWD]
       default: REGULAR
       description: |
-        STRICT — unknown values throw on the client. Non-REGULAR types carry the
-        mandated 20% LTFRB discount and require a verified ID reference.
+        LENIENT — unknown values fall back to REGULAR (no discount claimed) on
+        the client. Non-REGULAR types carry the mandated 20% LTFRB discount and
+        require a verified ID reference.
 
     PaymentStatus:
       type: string
       enum: [PAID, CASH_ON_BOARD]
-      description: STRICT — unknown values throw on the client.
+      description: |
+        LENIENT — unknown values fall back to CASH_ON_BOARD on the client (the
+        unpaid-safe direction: the conductor collects rather than the app
+        claiming a fare was paid).
+
+    BookingStatus:
+      type: string
+      enum: [CONFIRMED, CANCELLED, REFUNDED]
+      default: CONFIRMED
+      description: |
+        Lifecycle of a ticket as the rider sees it. LENIENT — unknown values
+        fall back to CONFIRMED. CANCELLED covers support cancellations and a
+        CASH_ON_BOARD reservation that lapsed; REFUNDED is a cancelled booking
+        whose fare was returned.
 
     PaymentMethod:
       type: string
@@ -392,6 +410,28 @@ components:
         column: { type: integer }
         status: { $ref: "#/components/schemas/SeatStatus" }
         lockedByUserId: { type: string, nullable: true }
+        lockExpiresAtEpochMillis:
+          type: integer
+          format: int64
+          nullable: true
+          description: |
+            When a LOCKED seat's hold lapses, if the server tracks it. Lets a
+            client that reconnects and re-fetches the seat map restore its
+            hold countdown without waiting for the next socket event.
+
+    SeatLockResponse:
+      type: object
+      description: |
+        Optional 200 body of the lock endpoint. Every field is optional; a
+        server that answers 204 sends none of this.
+      properties:
+        seatId: { type: string }
+        lockedByUserId: { type: string, nullable: true }
+        lockExpiresAtEpochMillis:
+          type: integer
+          format: int64
+          nullable: true
+          description: When this hold lapses (server clock).
 
     SeatStatusEvent:
       type: object
@@ -417,7 +457,7 @@ components:
 
     BookingRequest:
       type: object
-      required: [seatIds, passengerFullName, passengerType, paymentMethod]
+      required: [seatIds, passengerFullName, passengerType, paymentMethod, clientReference]
       properties:
         seatIds:
           type: array
@@ -442,6 +482,16 @@ components:
           description: Lap-held, free of charge, no seat assigned.
         paymentMethod: { $ref: "#/components/schemas/PaymentMethod" }
         promoCode: { type: string, nullable: true }
+        clientReference:
+          type: string
+          maxLength: 64
+          description: |
+            Idempotency key. The client generates a UUID once per checkout
+            attempt and reuses it on retries. The server MUST dedupe on
+            (user, clientReference) for 24 hours: a repeat with the same key
+            returns the ticket already issued (200/201 with the same body)
+            instead of booking a second time, so a lost response never
+            double-charges or double-books a rider on a flaky PH connection.
 
     Journey:
       type: object
@@ -504,6 +554,13 @@ components:
           format: int64
           nullable: true
           description: When an unpaid CASH_ON_BOARD hold lapses. Null once paid.
+        status:
+          allOf: [{ $ref: "#/components/schemas/BookingStatus" }]
+          description: Absent means CONFIRMED (older servers).
+        clientReference:
+          type: string
+          nullable: true
+          description: The idempotency key the client sent when booking, echoed back.
 
 x-websocket:
   description: OpenAPI 3.0 cannot express WebSockets, so the channel is documented here.
@@ -565,11 +622,13 @@ x-open-questions:
       user may hold at most 12 seats at once (409 beyond that).
   - id: hold-ttl
     severity: high
+    status: resolved-client-side
     detail: |
       TTL is 10 minutes server-side, swept lazily on read and actively every
-      minute. It is still never returned by REST — the client learns expiry
-      only via lockExpiresAtEpochMillis on the socket event and otherwise
-      assumes 10 minutes. Decide whether the lock response should carry it.
+      minute. The lock endpoint MAY now return a SeatLockResponse (200) with
+      lockExpiresAtEpochMillis; the client reads it when present and assumes
+      10 minutes on a 204. The seat-map Seat schema also carries the expiry so
+      a reconnect can restore the countdown. Backend: emit both when ready.
   - id: route-collision
     severity: medium
     detail: |
@@ -577,12 +636,19 @@ x-open-questions:
       or rename.
   - id: strict-enums
     severity: medium
+    status: resolved
     detail: |
-      busClass, passengerType and paymentStatus are parsed with valueOf() and no
-      fallback — an unrecognised value CRASHES the client rather than degrading.
-      rideKind, seat status and location kind fall back silently. Either make the
-      client uniformly lenient, or treat these three as a frozen contract the
-      backend must never violate.
+      The client is now uniformly lenient: busClass → ORDINARY, passengerType →
+      REGULAR, paymentStatus → CASH_ON_BOARD, seat status → OCCUPIED, rideKind →
+      BUS, location kind → CITY, booking status → CONFIRMED. Every fallback is
+      logged under the "RideVibe" tag so drift is visible without a crash.
+  - id: idempotent-booking
+    severity: high
+    detail: |
+      BookingRequest.clientReference is now required. The backend must store it
+      per (user, clientReference) and dedupe for 24 h, returning the existing
+      Ticket on a repeat; until it does, a retried checkout after a lost
+      response books twice.
   - id: money-type
     severity: medium
     detail: |

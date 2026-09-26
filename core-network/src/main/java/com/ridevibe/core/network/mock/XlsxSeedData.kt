@@ -11,6 +11,14 @@ import com.ridevibe.core.domain.model.RideKind
 // Fares are 2026 published figures where the workbook found them; rows the
 // workbook marked NOT FOUND are omitted (curated seeds cover the gaps).
 // Departure hours and durations are parsed where published, estimated where not.
+//
+// HAND-APPLIED FIXES (re-apply after regenerating): the workbook's placeholder
+// operators "Various operators" and "RORO Bus" are replaced with the operators
+// that actually run those corridors (Eagle Star Bus on Manila–Tacloban; Dimple
+// Star Transport on the Mindoro RoRo bus routes; DLTB and Ceres Liner on the
+// Masbate RoRo bus routes), and the five near-identical Victory Liner rows on
+// Cubao–Baguio and Pasay–Baguio are collapsed into Victory's real tiers
+// (Regular Aircon / Deluxe / First Class / Royal Class) with distinct hours.
 // ═════════════════════════════════════════════════════════════════════════════
 
 internal data class XlsxService(
@@ -38,7 +46,7 @@ internal val xlsxBusRoutes: Map<Pair<String, String>, List<XlsxService>> = mapOf
     ),
     ("Pasay" to "Tacloban Terminal") to listOf(
         XlsxService("Philtranco", BusClass.ORDINARY, 2500.0, listOf(13, 17), 1110, RideKind.BUS),
-        XlsxService("Various operators", BusClass.DELUXE, 1350.0, listOf(10, 19), 1011, RideKind.BUS),
+        XlsxService("Eagle Star Bus", BusClass.DELUXE, 1350.0, listOf(10, 19), 1011, RideKind.BUS),
     ),
     ("Cubao" to "Tacloban Terminal") to listOf(
         XlsxService("Philtranco", BusClass.ORDINARY, 2500.0, listOf(13, 17), 1110, RideKind.BUS),
@@ -74,39 +82,39 @@ internal val xlsxBusRoutes: Map<Pair<String, String>, List<XlsxService>> = mapOf
         XlsxService("Ceres Transport", BusClass.DELUXE, 762.0, listOf(9), 420, RideKind.BUS),
     ),
     ("Pasay" to "Calapan") to listOf(
-        XlsxService("RORO Bus", BusClass.ORDINARY, 638.0, listOf(6, 10, 18, 20), 446, RideKind.BUS),
+        XlsxService("Dimple Star Transport", BusClass.ORDINARY, 638.0, listOf(6, 10, 18, 20), 446, RideKind.BUS),
     ),
     ("Turbina Calamba" to "San Jose") to listOf(
-        XlsxService("RORO Bus", BusClass.ORDINARY, 774.0, listOf(6, 10, 18, 20), 541, RideKind.BUS),
+        XlsxService("Dimple Star Transport", BusClass.ORDINARY, 774.0, listOf(6, 10, 18, 20), 541, RideKind.BUS),
     ),
     ("Pasay" to "Occidental Mindoro") to listOf(
-        XlsxService("RORO Bus", BusClass.ORDINARY, 1269.0, listOf(13, 17), 888, RideKind.BUS),
+        XlsxService("Dimple Star Transport", BusClass.ORDINARY, 1269.0, listOf(13, 17), 888, RideKind.BUS),
         XlsxService("Partas", BusClass.ORDINARY, 935.0, listOf(6, 10, 18, 20), 654, RideKind.BUS),
     ),
     ("Pasay" to "Masbate") to listOf(
-        XlsxService("RORO Bus", BusClass.ORDINARY, 1765.0, listOf(13, 17), 1235, RideKind.BUS),
+        XlsxService("DLTB", BusClass.ORDINARY, 1765.0, listOf(13, 17), 1235, RideKind.BUS),
         XlsxService("Bicol Isarog", BusClass.ORDINARY, 1200.0, listOf(13, 17), 840, RideKind.BUS),
     ),
     ("Mandaue" to "Masbate") to listOf(
-        XlsxService("RORO Bus", BusClass.ORDINARY, 1214.0, listOf(13, 17), 849, RideKind.BUS),
+        XlsxService("Ceres Liner", BusClass.ORDINARY, 1214.0, listOf(13, 17), 849, RideKind.BUS),
     ),
     ("Turbina Calamba" to "Masbate") to listOf(
         XlsxService("Bicol Isarog", BusClass.ORDINARY, 1100.0, listOf(13, 17), 770, RideKind.BUS),
     ),
     ("Pasay" to "Baguio") to listOf(
-        XlsxService("Victory Liner", BusClass.DELUXE, 669.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
-        XlsxService("Victory Liner", BusClass.DELUXE, 680.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
-        XlsxService("Victory Liner", BusClass.DELUXE, 801.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
-        XlsxService("Victory Liner", BusClass.LUXURY, 1078.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
-        XlsxService("Victory Liner", BusClass.LUXURY, 1616.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
+        // Victory Liner tiers: Regular Aircon (hourly-ish), Deluxe w/ CR, First Class, Royal Class.
+        XlsxService("Victory Liner", BusClass.ORDINARY, 669.0, listOf(0, 3, 6, 9, 12, 15, 18, 21), 390, RideKind.BUS),
+        XlsxService("Victory Liner", BusClass.DELUXE, 801.0, listOf(1, 7, 13, 19, 23), 360, RideKind.BUS),
+        XlsxService("Victory Liner", BusClass.LUXURY, 1078.0, listOf(8, 14, 22), 330, RideKind.BUS),
+        XlsxService("Victory Liner", BusClass.LUXURY, 1616.0, listOf(10, 23), 300, RideKind.BUS),
         XlsxService("Genesis Transport", BusClass.DELUXE, 649.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
     ),
     ("Cubao" to "Baguio") to listOf(
-        XlsxService("Victory Liner", BusClass.DELUXE, 655.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
-        XlsxService("Victory Liner", BusClass.DELUXE, 666.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
-        XlsxService("Victory Liner", BusClass.DELUXE, 784.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
-        XlsxService("Victory Liner", BusClass.LUXURY, 1055.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
-        XlsxService("Victory Liner", BusClass.LUXURY, 1581.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
+        // Victory Liner tiers: Regular Aircon (hourly-ish), Deluxe w/ CR, First Class, Royal Class.
+        XlsxService("Victory Liner", BusClass.ORDINARY, 655.0, listOf(0, 3, 6, 9, 12, 15, 18, 21), 390, RideKind.BUS),
+        XlsxService("Victory Liner", BusClass.DELUXE, 784.0, listOf(1, 7, 13, 19, 23), 360, RideKind.BUS),
+        XlsxService("Victory Liner", BusClass.LUXURY, 1055.0, listOf(8, 14, 22), 330, RideKind.BUS),
+        XlsxService("Victory Liner", BusClass.LUXURY, 1581.0, listOf(10, 23), 300, RideKind.BUS),
         XlsxService("Genesis Transport", BusClass.DELUXE, 649.0, listOf(6, 9, 12, 15, 18, 21), 360, RideKind.BUS),
     ),
     ("Caloocan" to "Baguio") to listOf(

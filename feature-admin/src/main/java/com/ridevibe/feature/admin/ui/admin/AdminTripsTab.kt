@@ -16,20 +16,23 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ridevibe.core.domain.model.RideKind
 import com.ridevibe.feature.admin.ui.components.ButtonSpinner
 import com.ridevibe.feature.admin.ui.components.DateSelector
 import com.ridevibe.feature.admin.ui.components.EmptyText
+import com.ridevibe.feature.admin.ui.components.ErrorWithRetry
 import com.ridevibe.feature.admin.ui.components.HintText
 import com.ridevibe.feature.admin.ui.components.InlineError
 import com.ridevibe.feature.admin.ui.components.LoadingRow
@@ -45,10 +48,12 @@ import com.ridevibe.feature.admin.viewmodel.AdminTripsViewModel
 /** Trips: browse departures; seat maps apply to bus trips (ferries and fastcraft board open). */
 @Composable
 fun AdminTripsTab(
+    sessionKey: String,
     onMessage: (String) -> Unit,
     viewModel: AdminTripsViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(sessionKey) { viewModel.start(sessionKey) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -59,7 +64,12 @@ fun AdminTripsTab(
             PageHeader("Trips", "Browse departures; seat maps apply to bus trips (ferries and fastcraft board open)")
         }
         item {
-            DateSelector(dateIso = state.dateIso, onPrevious = viewModel::previousDay, onNext = viewModel::nextDay)
+            DateSelector(
+                dateIso = state.dateIso,
+                onPrevious = viewModel::previousDay,
+                onNext = viewModel::nextDay,
+                onPick = viewModel::setDate,
+            )
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -86,11 +96,13 @@ fun AdminTripsTab(
                 if (state.isLoading) ButtonSpinner() else Text("Load", fontWeight = FontWeight.Bold)
             }
         }
-        state.error?.let { item { InlineError(it) } }
         when {
             state.isLoading && state.trips.isEmpty() -> item { LoadingRow() }
-            state.trips.isEmpty() -> item { EmptyText("No trips for those filters.") }
+            state.error != null && state.trips.isEmpty() -> item { ErrorWithRetry(state.error!!, onRetry = viewModel::load) }
+            !state.hasLoaded -> item { HintText("Pick a date and filters, then Load.") }
+            state.trips.isEmpty() -> item { EmptyText("No trips on ${state.dateIso} for those filters.") }
             else -> {
+                state.error?.let { item { InlineError(it) } }
                 item { HintText("${state.trips.size} departure${if (state.trips.size == 1) "" else "s"} on ${state.dateIso}") }
                 items(state.trips, key = { it.id }) { trip ->
                     TripOccupancyRow(
@@ -98,6 +110,17 @@ fun AdminTripsTab(
                         onClick = { viewModel.openTrip(trip) },
                         selected = state.selectedTrip?.id == trip.id,
                     )
+                }
+                if (state.canLoadMore) {
+                    item {
+                        OutlinedButton(
+                            onClick = viewModel::loadMore,
+                            enabled = !state.isLoadingMore,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            if (state.isLoadingMore) ButtonSpinner() else Text("Load more")
+                        }
+                    }
                 }
             }
         }

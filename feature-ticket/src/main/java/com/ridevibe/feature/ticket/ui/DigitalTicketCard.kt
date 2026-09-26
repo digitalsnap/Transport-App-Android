@@ -3,46 +3,53 @@ package com.ridevibe.feature.ticket.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DirectionsBoat
 import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.ridevibe.core.domain.model.CoPassenger
-import com.ridevibe.core.domain.model.PassengerType
-
-// Charcoal chrome token mirrored from the design palette (:app theme not visible here).
-private val ChromeCharcoal = Color(0xFF2C363F)
+import com.ridevibe.core.domain.model.RideKind
+import com.ridevibe.feature.ticket.format.TicketFormatter
 
 /**
- * RideVibe boarding pass card (design pages 6-7): indigo operator header,
+ * RideVibe boarding pass card (design pages 6-7): dark operator header,
  * high-density QR, ticket id, and the trip detail grid. [qrPayload] is a
  * server-signed token — this composable only renders it.
+ *
+ * [statusOverlay] ("CANCELLED", "REFUNDED", "LAPSED") greys the QR and stamps
+ * it, so a dead ticket can never be mistaken for a live one at the door.
  */
 @Composable
 fun DigitalTicketCard(
     operatorName: String,
-    classLabel: String, // e.g. "Premier Executive Class" / "Deluxe • Senior"
-    seatLabel: String, // e.g. "2A" or "2A, 2B"
+    classLabel: String, // e.g. "Deluxe • Senior" / "Tourist Class"
+    seatLabel: String, // e.g. "2A" or "2A, 2B" or "P1"
     ticketId: String,
     dateLabel: String,
     departureLabel: String,
@@ -54,26 +61,31 @@ fun DigitalTicketCard(
     modifier: Modifier = Modifier,
     coPassengers: List<CoPassenger> = emptyList(),
     infantCount: Int = 0,
+    rideKind: RideKind = RideKind.BUS,
+    statusOverlay: String? = null,
 ) {
+    val seatNoun = TicketFormatter.seatNoun(rideKind, plural = seatLabel.contains(','))
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
     ) {
-        // Charcoal operator header, finished with the ticket's gold trim below.
+        // Inverse-surface header keeps the dark chrome of the design in both themes.
+        val headerColor = MaterialTheme.colorScheme.inverseSurface
+        val onHeader = MaterialTheme.colorScheme.inverseOnSurface
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(ChromeCharcoal)
+                .background(headerColor)
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(shape = RoundedCornerShape(10.dp), color = Color.White.copy(alpha = 0.2f)) {
+            Surface(shape = RoundedCornerShape(10.dp), color = onHeader.copy(alpha = 0.2f)) {
                 Icon(
-                    Icons.Filled.DirectionsBus,
-                    contentDescription = null,
-                    tint = Color.White,
+                    if (rideKind.sellsPassage) Icons.Filled.DirectionsBoat else Icons.Filled.DirectionsBus,
+                    contentDescription = if (rideKind.sellsPassage) "Sea trip" else "Bus trip",
+                    tint = onHeader,
                     modifier = Modifier.padding(8.dp).size(22.dp),
                 )
             }
@@ -82,20 +94,20 @@ fun DigitalTicketCard(
                     operatorName,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = onHeader,
                 )
                 Text(
                     classLabel.uppercase(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = onHeader.copy(alpha = 0.85f),
                 )
             }
-            Surface(shape = RoundedCornerShape(50), color = Color.White.copy(alpha = 0.25f)) {
+            Surface(shape = RoundedCornerShape(50), color = onHeader.copy(alpha = 0.25f)) {
                 Text(
-                    "Seat $seatLabel",
+                    "$seatNoun $seatLabel",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = onHeader,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                 )
             }
@@ -108,12 +120,7 @@ fun DigitalTicketCard(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            val qrBitmap = rememberQrCodeBitmap(qrPayload)
-            Image(
-                painter = BitmapPainter(qrBitmap),
-                contentDescription = "Boarding QR code",
-                modifier = Modifier.size(190.dp),
-            )
+            QrPanel(qrPayload = qrPayload, ticketId = ticketId, statusOverlay = statusOverlay)
 
             Spacer(modifier = Modifier.height(12.dp))
             Text(
@@ -155,12 +162,7 @@ fun DigitalTicketCard(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    val typeLabel = when (co.type) {
-                        PassengerType.REGULAR -> "Regular"
-                        PassengerType.STUDENT -> "Student"
-                        PassengerType.SENIOR_CITIZEN -> "Senior Citizen"
-                        PassengerType.PWD -> "PWD"
-                    }
+                    val typeLabel = TicketFormatter.coPassengerTypeLabel(co.type)
                     Text(
                         co.mobileNumber?.let { "$typeLabel • $it" } ?: typeLabel,
                         style = MaterialTheme.typography.bodySmall,
@@ -170,11 +172,60 @@ fun DigitalTicketCard(
                 if (infantCount > 0) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "+ $infantCount lap-held infant${if (infantCount == 1) "" else "s"} (free)",
+                        "+ $infantCount infant${if (infantCount == 1) "" else "s"} on lap (free)",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QrPanel(qrPayload: String, ticketId: String, statusOverlay: String?) {
+    val qr by rememberQrCode(qrPayload)
+    // The quiet zone stays pure white whatever the theme: boarding scanners
+    // need the black/white contrast, and a dark-theme surface behind the
+    // code cuts the read rate. This is the one deliberate hard-coded colour.
+    Box(
+        modifier = Modifier
+            .size(206.dp)
+            .background(Color.White, RoundedCornerShape(12.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        when (val render = qr) {
+            QrRender.Loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
+
+            is QrRender.Ready -> Image(
+                bitmap = render.image,
+                contentDescription = if (statusOverlay == null) "Boarding QR code" else "Boarding QR code, $statusOverlay",
+                modifier = Modifier
+                    .size(190.dp)
+                    .alpha(if (statusOverlay == null) 1f else 0.25f),
+            )
+
+            QrRender.Unavailable -> Text(
+                "QR unavailable — show ticket ID $ticketId",
+                style = MaterialTheme.typography.bodySmall,
+                // Text sits on the white quiet zone, so it must be dark regardless of theme.
+                color = Color.Black,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(16.dp),
+            )
+        }
+        statusOverlay?.let { stamp ->
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.error,
+            ) {
+                Text(
+                    stamp,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onError,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                )
             }
         }
     }

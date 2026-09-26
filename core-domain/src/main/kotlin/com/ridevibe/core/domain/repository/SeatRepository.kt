@@ -10,8 +10,8 @@ import kotlinx.coroutines.flow.Flow
  */
 interface SeatRepository {
 
-    /** Initial seat layout snapshot fetched over REST. */
-    suspend fun getSeatMap(tripId: String): List<Seat>
+    /** Initial seat layout snapshot fetched over REST. Empty for sea passage (no seat map). */
+    suspend fun getSeatMap(tripId: String): Result<List<Seat>>
 
     /**
      * Opens (or reuses) a WebSocket subscription for [tripId] and emits every
@@ -19,8 +19,13 @@ interface SeatRepository {
      */
     fun observeSeatEvents(tripId: String): Flow<SeatStatusEvent>
 
-    /** Requests a temporary lock on [seatId] (server enforces the hold duration). */
-    suspend fun lockSeat(tripId: String, seatId: String): Result<Unit>
+    /**
+     * Requests a temporary lock on [seatId]. The server enforces the hold
+     * duration; the value is the hold's expiry (epoch millis) when the server
+     * reported one, null when it sent no body — the UI then assumes the
+     * documented 10-minute TTL.
+     */
+    suspend fun lockSeat(tripId: String, seatId: String): Result<Long?>
 
     /** Releases a lock the current user is holding, e.g. on timeout or deselect. */
     suspend fun releaseSeat(tripId: String, seatId: String): Result<Unit>

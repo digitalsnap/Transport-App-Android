@@ -2,6 +2,7 @@ package com.ridevibe.feature.admin.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
@@ -30,30 +32,44 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ridevibe.core.domain.format.PhTime
 import com.ridevibe.feature.admin.ui.formatIsoDayLong
-import com.ridevibe.feature.admin.ui.isTodayPh
 
 /*
  * Shared building blocks for the staff console. Only MaterialTheme.colorScheme
  * roles are used — the app's brand constants are not visible from a feature module.
  * Charcoal chrome = inverseSurface, teal accent = primary, gold = tertiary.
  */
+
+/** Width from which the console swaps the bottom bar for a navigation rail and widens grids. */
+val StaffWideLayoutMinWidth = 600.dp
 
 /** Charcoal top bar chrome matching the passenger app, through theme roles only. */
 @Composable
@@ -108,7 +124,12 @@ fun SectionCard(
     }
 }
 
-/** A stat tile: micro-label + big number. [accent] = gold left rule ("premium"), [alert] = error tint. */
+/**
+ * A stat tile: micro-label + big number. [accent] = gold left rule ("premium"),
+ * [alert] = error tint. A value that would not fit (a peso total) steps down
+ * a size and ellipsises; long-pressing the tile shows the whole value in a
+ * tooltip. [onClick] turns the tile into a shortcut (Overview → Support).
+ */
 @Composable
 fun StatTile(
     label: String,
@@ -116,55 +137,75 @@ fun StatTile(
     modifier: Modifier = Modifier,
     accent: Boolean = false,
     alert: Boolean = false,
+    onClick: (() -> Unit)? = null,
 ) {
     val valueColor = when {
         alert -> MaterialTheme.colorScheme.error
         accent -> MaterialTheme.colorScheme.onTertiaryContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
-    Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (accent) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface,
-        ),
+    val valueStyle = if (value.length > 8) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text("$label: $value") } },
+        state = rememberTooltipState(),
         modifier = modifier,
     ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-            MicroLabel(label)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                value,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = valueColor,
-                maxLines = 1,
-            )
-        }
-    }
-}
-
-/** Two tiles per row, like the responsive `.tiles` grid on a phone-width dashboard. */
-@Composable
-fun StatTileGrid(tiles: List<StatTileSpec>, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        tiles.chunked(2).forEach { pair ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                pair.forEach { tile ->
-                    StatTile(
-                        label = tile.label,
-                        value = tile.value,
-                        accent = tile.accent,
-                        alert = tile.alert,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
+        Card(
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (accent) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .semantics { contentDescription = "$label: $value" },
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                MicroLabel(label)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    value,
+                    style = valueStyle,
+                    fontWeight = FontWeight.Bold,
+                    color = valueColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
 }
 
-data class StatTileSpec(val label: String, val value: String, val accent: Boolean = false, val alert: Boolean = false)
+/** Two tiles per row on a phone, four on a tablet — the responsive `.tiles` grid. */
+@Composable
+fun StatTileGrid(tiles: List<StatTileSpec>, modifier: Modifier = Modifier, columns: Int = 2) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        tiles.chunked(columns).forEach { rowTiles ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                rowTiles.forEach { tile ->
+                    StatTile(
+                        label = tile.label,
+                        value = tile.value,
+                        accent = tile.accent,
+                        alert = tile.alert,
+                        onClick = tile.onClick,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                repeat(columns - rowTiles.size) { Spacer(modifier = Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+data class StatTileSpec(
+    val label: String,
+    val value: String,
+    val accent: Boolean = false,
+    val alert: Boolean = false,
+    val onClick: (() -> Unit)? = null,
+)
 
 /** Tinted status pill tones, mapped from the dashboards' `.pill.*` classes. */
 enum class PillTone { PLAIN, OK, WARN, BAD, MINT, GOLD }
@@ -290,6 +331,15 @@ fun InlineError(message: String?, modifier: Modifier = Modifier) {
     )
 }
 
+/** Error line plus a retry button — for a list that failed to load at all. */
+@Composable
+fun ErrorWithRetry(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        InlineError(message)
+        OutlinedButton(onClick = onRetry) { Text("Retry") }
+    }
+}
+
 @Composable
 fun LoadingRow(modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -338,17 +388,29 @@ fun NoteCard(text: String, modifier: Modifier = Modifier, bold: String? = null) 
     }
 }
 
-/** `‹ 2026-09-03 ›` day stepper; PH calendar arithmetic lives in the view model. */
+/**
+ * `‹ 2026-09-03 ›` day stepper. Tapping the date opens a calendar and the
+ * "Today" link jumps back; PH calendar arithmetic stays in the view model,
+ * which receives the picked ISO day through [onPick].
+ */
 @Composable
 fun DateSelector(
     dateIso: String,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onPick: (isoDay: String) -> Unit,
     modifier: Modifier = Modifier,
     label: String = "Date (PH)",
 ) {
+    var showPicker by rememberSaveable { mutableStateOf(false) }
+    val isToday = dateIso == PhTime.todayIso()
     Column(modifier = modifier) {
-        MicroLabel(label)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            MicroLabel(label)
+            if (!isToday) {
+                TextButton(onClick = { onPick(PhTime.todayIso()) }) { Text("Today") }
+            }
+        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
@@ -359,10 +421,26 @@ fun DateSelector(
             IconButton(onClick = onPrevious) {
                 Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous day")
             }
-            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(dateIso, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = { showPicker = true })
+                    .semantics { contentDescription = "Date ${formatIsoDayLong(dateIso)}, tap to pick another" }
+                    .padding(vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(dateIso, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(
+                        Icons.Filled.CalendarMonth,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
                 Text(
-                    if (isTodayPh(dateIso)) "Today · ${formatIsoDayLong(dateIso)}" else formatIsoDayLong(dateIso),
+                    if (isToday) "Today · ${formatIsoDayLong(dateIso)}" else formatIsoDayLong(dateIso),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -371,6 +449,16 @@ fun DateSelector(
                 Icon(Icons.Filled.ChevronRight, contentDescription = "Next day")
             }
         }
+    }
+    if (showPicker) {
+        StaffDatePickerDialog(
+            initialIsoDay = dateIso,
+            onPick = { picked ->
+                showPicker = false
+                onPick(picked)
+            },
+            onDismiss = { showPicker = false },
+        )
     }
 }
 

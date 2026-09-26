@@ -2,7 +2,8 @@
 
 Reconciles `ridevibe-roadmap.md` (pinned at `main @ 6e3f8b1`) against the repo as
 it actually stands. Where the two disagree, **this file is authoritative** — the
-roadmap is 11 commits stale.
+roadmap is 11 commits stale. The roadmap document itself is not in this
+repository; phase numbers below are kept for historical continuity.
 
 ---
 

@@ -472,47 +472,14 @@
             {
                 "operatorName": "Victory Liner",
                 "busClass": "DELUXE",
-                "farePhp": 655.0,
-                "rating": 4.2,
-                "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
-                ],
-                "durationMinutes": 360,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "Victory Liner",
-                "busClass": "DELUXE",
-                "farePhp": 666.0,
-                "rating": 4.2,
-                "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
-                ],
-                "durationMinutes": 360,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "Victory Liner",
-                "busClass": "DELUXE",
                 "farePhp": 784.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    1,
+                    7,
+                    13,
+                    19,
+                    23
                 ],
                 "durationMinutes": 360,
                 "rideKind": "BUS"
@@ -523,14 +490,11 @@
                 "farePhp": 1055.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    8,
+                    14,
+                    22
                 ],
-                "durationMinutes": 360,
+                "durationMinutes": 330,
                 "rideKind": "BUS"
             },
             {
@@ -539,14 +503,10 @@
                 "farePhp": 1581.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    10,
+                    23
                 ],
-                "durationMinutes": 360,
+                "durationMinutes": 300,
                 "rideKind": "BUS"
             },
             {
@@ -561,6 +521,24 @@
                     21
                 ],
                 "durationMinutes": 360,
+                "rideKind": "BUS"
+            },
+            {
+                "operatorName": "Victory Liner",
+                "busClass": "ORDINARY",
+                "farePhp": 655.0,
+                "rating": 4.2,
+                "departureHours": [
+                    0,
+                    3,
+                    6,
+                    9,
+                    12,
+                    15,
+                    18,
+                    21
+                ],
+                "durationMinutes": 390,
                 "rideKind": "BUS"
             }
         ]
@@ -734,47 +712,14 @@
             {
                 "operatorName": "Victory Liner",
                 "busClass": "DELUXE",
-                "farePhp": 669.0,
-                "rating": 4.2,
-                "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
-                ],
-                "durationMinutes": 360,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "Victory Liner",
-                "busClass": "DELUXE",
-                "farePhp": 680.0,
-                "rating": 4.2,
-                "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
-                ],
-                "durationMinutes": 360,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "Victory Liner",
-                "busClass": "DELUXE",
                 "farePhp": 801.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    1,
+                    7,
+                    13,
+                    19,
+                    23
                 ],
                 "durationMinutes": 360,
                 "rideKind": "BUS"
@@ -785,14 +730,11 @@
                 "farePhp": 1078.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    8,
+                    14,
+                    22
                 ],
-                "durationMinutes": 360,
+                "durationMinutes": 330,
                 "rideKind": "BUS"
             },
             {
@@ -801,14 +743,10 @@
                 "farePhp": 1616.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    10,
+                    23
                 ],
-                "durationMinutes": 360,
+                "durationMinutes": 300,
                 "rideKind": "BUS"
             },
             {
@@ -822,6 +760,24 @@
                     22
                 ],
                 "durationMinutes": 375,
+                "rideKind": "BUS"
+            },
+            {
+                "operatorName": "Victory Liner",
+                "busClass": "ORDINARY",
+                "farePhp": 669.0,
+                "rating": 4.2,
+                "departureHours": [
+                    0,
+                    3,
+                    6,
+                    9,
+                    12,
+                    15,
+                    18,
+                    21
+                ],
+                "durationMinutes": 390,
                 "rideKind": "BUS"
             },
             {
@@ -1447,7 +1403,7 @@
         "mode": "LAND",
         "services": [
             {
-                "operatorName": "RORO Bus",
+                "operatorName": "Dimple Star Transport",
                 "busClass": "ORDINARY",
                 "farePhp": 638.0,
                 "rating": 4.2,
@@ -1877,47 +1833,14 @@
             {
                 "operatorName": "Victory Liner",
                 "busClass": "DELUXE",
-                "farePhp": 655.0,
-                "rating": 4.2,
-                "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
-                ],
-                "durationMinutes": 360,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "Victory Liner",
-                "busClass": "DELUXE",
-                "farePhp": 666.0,
-                "rating": 4.2,
-                "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
-                ],
-                "durationMinutes": 360,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "Victory Liner",
-                "busClass": "DELUXE",
                 "farePhp": 784.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    1,
+                    7,
+                    13,
+                    19,
+                    23
                 ],
                 "durationMinutes": 360,
                 "rideKind": "BUS"
@@ -1928,14 +1851,11 @@
                 "farePhp": 1055.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    8,
+                    14,
+                    22
                 ],
-                "durationMinutes": 360,
+                "durationMinutes": 330,
                 "rideKind": "BUS"
             },
             {
@@ -1944,14 +1864,10 @@
                 "farePhp": 1581.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    10,
+                    23
                 ],
-                "durationMinutes": 360,
+                "durationMinutes": 300,
                 "rideKind": "BUS"
             },
             {
@@ -1966,6 +1882,24 @@
                     21
                 ],
                 "durationMinutes": 360,
+                "rideKind": "BUS"
+            },
+            {
+                "operatorName": "Victory Liner",
+                "busClass": "ORDINARY",
+                "farePhp": 655.0,
+                "rating": 4.2,
+                "departureHours": [
+                    0,
+                    3,
+                    6,
+                    9,
+                    12,
+                    15,
+                    18,
+                    21
+                ],
+                "durationMinutes": 390,
                 "rideKind": "BUS"
             }
         ]
@@ -4492,7 +4426,7 @@
         "mode": "LAND",
         "services": [
             {
-                "operatorName": "RORO Bus",
+                "operatorName": "Ceres Liner",
                 "busClass": "ORDINARY",
                 "farePhp": 1214.0,
                 "rating": 4.2,
@@ -4511,7 +4445,7 @@
         "mode": "LAND",
         "services": [
             {
-                "operatorName": "RORO Bus",
+                "operatorName": "Ceres Liner",
                 "busClass": "ORDINARY",
                 "farePhp": 1214.0,
                 "rating": 4.2,
@@ -4542,7 +4476,7 @@
                 "rideKind": "BUS"
             },
             {
-                "operatorName": "RORO Bus",
+                "operatorName": "DLTB",
                 "busClass": "ORDINARY",
                 "farePhp": 1765.0,
                 "rating": 4.2,
@@ -4968,6 +4902,18 @@
         "mode": "LAND",
         "services": [
             {
+                "operatorName": "Dimple Star Transport",
+                "busClass": "ORDINARY",
+                "farePhp": 1269.0,
+                "rating": 4.2,
+                "departureHours": [
+                    13,
+                    17
+                ],
+                "durationMinutes": 888,
+                "rideKind": "BUS"
+            },
+            {
                 "operatorName": "Partas",
                 "busClass": "ORDINARY",
                 "farePhp": 935.0,
@@ -4979,18 +4925,6 @@
                     20
                 ],
                 "durationMinutes": 654,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "RORO Bus",
-                "busClass": "ORDINARY",
-                "farePhp": 1269.0,
-                "rating": 4.2,
-                "departureHours": [
-                    13,
-                    17
-                ],
-                "durationMinutes": 888,
                 "rideKind": "BUS"
             }
         ]
@@ -5874,47 +5808,14 @@
             {
                 "operatorName": "Victory Liner",
                 "busClass": "DELUXE",
-                "farePhp": 669.0,
-                "rating": 4.2,
-                "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
-                ],
-                "durationMinutes": 360,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "Victory Liner",
-                "busClass": "DELUXE",
-                "farePhp": 680.0,
-                "rating": 4.2,
-                "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
-                ],
-                "durationMinutes": 360,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "Victory Liner",
-                "busClass": "DELUXE",
                 "farePhp": 801.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    1,
+                    7,
+                    13,
+                    19,
+                    23
                 ],
                 "durationMinutes": 360,
                 "rideKind": "BUS"
@@ -5925,14 +5826,11 @@
                 "farePhp": 1078.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    8,
+                    14,
+                    22
                 ],
-                "durationMinutes": 360,
+                "durationMinutes": 330,
                 "rideKind": "BUS"
             },
             {
@@ -5941,14 +5839,10 @@
                 "farePhp": 1616.0,
                 "rating": 4.2,
                 "departureHours": [
-                    6,
-                    9,
-                    12,
-                    15,
-                    18,
-                    21
+                    10,
+                    23
                 ],
-                "durationMinutes": 360,
+                "durationMinutes": 300,
                 "rideKind": "BUS"
             },
             {
@@ -5962,6 +5856,24 @@
                     22
                 ],
                 "durationMinutes": 375,
+                "rideKind": "BUS"
+            },
+            {
+                "operatorName": "Victory Liner",
+                "busClass": "ORDINARY",
+                "farePhp": 669.0,
+                "rating": 4.2,
+                "departureHours": [
+                    0,
+                    3,
+                    6,
+                    9,
+                    12,
+                    15,
+                    18,
+                    21
+                ],
+                "durationMinutes": 390,
                 "rideKind": "BUS"
             },
             {
@@ -6105,7 +6017,7 @@
         "mode": "LAND",
         "services": [
             {
-                "operatorName": "RORO Bus",
+                "operatorName": "Dimple Star Transport",
                 "busClass": "ORDINARY",
                 "farePhp": 638.0,
                 "rating": 4.2,
@@ -6485,7 +6397,7 @@
                 "rideKind": "BUS"
             },
             {
-                "operatorName": "RORO Bus",
+                "operatorName": "DLTB",
                 "busClass": "ORDINARY",
                 "farePhp": 1765.0,
                 "rating": 4.2,
@@ -6567,6 +6479,18 @@
         "mode": "LAND",
         "services": [
             {
+                "operatorName": "Dimple Star Transport",
+                "busClass": "ORDINARY",
+                "farePhp": 1269.0,
+                "rating": 4.2,
+                "departureHours": [
+                    13,
+                    17
+                ],
+                "durationMinutes": 888,
+                "rideKind": "BUS"
+            },
+            {
                 "operatorName": "Partas",
                 "busClass": "ORDINARY",
                 "farePhp": 935.0,
@@ -6578,18 +6502,6 @@
                     20
                 ],
                 "durationMinutes": 654,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "RORO Bus",
-                "busClass": "ORDINARY",
-                "farePhp": 1269.0,
-                "rating": 4.2,
-                "departureHours": [
-                    13,
-                    17
-                ],
-                "durationMinutes": 888,
                 "rideKind": "BUS"
             }
         ]
@@ -6836,6 +6748,18 @@
                 "rideKind": "BUS"
             },
             {
+                "operatorName": "Eagle Star Bus",
+                "busClass": "DELUXE",
+                "farePhp": 1350.0,
+                "rating": 4.2,
+                "departureHours": [
+                    10,
+                    19
+                ],
+                "durationMinutes": 1011,
+                "rideKind": "BUS"
+            },
+            {
                 "operatorName": "Philtranco",
                 "busClass": "ORDINARY",
                 "farePhp": 2150.0,
@@ -6856,18 +6780,6 @@
                     17
                 ],
                 "durationMinutes": 1110,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "Various operators",
-                "busClass": "DELUXE",
-                "farePhp": 1350.0,
-                "rating": 4.2,
-                "departureHours": [
-                    10,
-                    19
-                ],
-                "durationMinutes": 1011,
                 "rideKind": "BUS"
             }
         ]
@@ -7588,7 +7500,7 @@
         "mode": "LAND",
         "services": [
             {
-                "operatorName": "RORO Bus",
+                "operatorName": "Dimple Star Transport",
                 "busClass": "ORDINARY",
                 "farePhp": 774.0,
                 "rating": 4.2,
@@ -8026,6 +7938,18 @@
                 "rideKind": "BUS"
             },
             {
+                "operatorName": "Eagle Star Bus",
+                "busClass": "DELUXE",
+                "farePhp": 1350.0,
+                "rating": 4.2,
+                "departureHours": [
+                    10,
+                    19
+                ],
+                "durationMinutes": 1011,
+                "rideKind": "BUS"
+            },
+            {
                 "operatorName": "Philtranco",
                 "busClass": "ORDINARY",
                 "farePhp": 2150.0,
@@ -8046,18 +7970,6 @@
                     17
                 ],
                 "durationMinutes": 1110,
-                "rideKind": "BUS"
-            },
-            {
-                "operatorName": "Various operators",
-                "busClass": "DELUXE",
-                "farePhp": 1350.0,
-                "rating": 4.2,
-                "departureHours": [
-                    10,
-                    19
-                ],
-                "durationMinutes": 1011,
                 "rideKind": "BUS"
             }
         ]
@@ -8278,7 +8190,7 @@
         "mode": "LAND",
         "services": [
             {
-                "operatorName": "RORO Bus",
+                "operatorName": "Dimple Star Transport",
                 "busClass": "ORDINARY",
                 "farePhp": 774.0,
                 "rating": 4.2,

@@ -1,14 +1,9 @@
 package com.ridevibe.core.network.dto
 
-import com.ridevibe.core.domain.model.BusClass
 import com.ridevibe.core.domain.model.CoPassenger
 import com.ridevibe.core.domain.model.Journey
 import com.ridevibe.core.domain.model.JourneyLeg
 import com.ridevibe.core.domain.model.Passenger
-import com.ridevibe.core.domain.model.PassengerType
-import com.ridevibe.core.domain.model.LocationKind
-import com.ridevibe.core.domain.model.PaymentStatus
-import com.ridevibe.core.domain.model.RideKind
 import com.ridevibe.core.domain.model.TerminalLocation
 import com.ridevibe.core.domain.model.Ticket
 import com.ridevibe.core.domain.model.Trip
@@ -26,7 +21,7 @@ data class LocationDto(
     fun toDomain() = TerminalLocation(
         name = name,
         isCentralTerminal = isCentralTerminal,
-        kind = runCatching { LocationKind.valueOf(kind.uppercase()) }.getOrDefault(LocationKind.CITY),
+        kind = kind.toLocationKind(),
         region = region,
         description = description,
     )
@@ -44,9 +39,19 @@ data class CoPassengerDto(
         firstName = firstName,
         lastName = lastName,
         mobileNumber = mobileNumber,
-        type = PassengerType.valueOf(type.uppercase()),
+        type = type.toPassengerType(),
         discountIdImagePath = discountIdImagePath,
     )
+
+    companion object {
+        fun from(passenger: CoPassenger) = CoPassengerDto(
+            firstName = passenger.firstName,
+            lastName = passenger.lastName,
+            mobileNumber = passenger.mobileNumber,
+            type = passenger.type.name,
+            discountIdImagePath = passenger.discountIdImagePath,
+        )
+    }
 }
 
 @Serializable
@@ -59,6 +64,8 @@ data class BookingRequestDto(
     val infantCount: Int = 0,
     val paymentMethod: String,
     val promoCode: String? = null,
+    /** Idempotency key, generated once per checkout attempt; the server dedupes on it (24 h). */
+    val clientReference: String,
 )
 
 @Serializable
@@ -69,7 +76,8 @@ data class TripDto(
     val destination: String,
     val departureEpochMillis: Long,
     val arrivalEpochMillis: Long,
-    val busClass: String,
+    /** ORDINARY | DELUXE | LUXURY; unknown or missing falls back to ORDINARY. */
+    val busClass: String = "ORDINARY",
     val farePhp: Double,
     val availableSeatCount: Int,
     val operatorRating: Double? = null,
@@ -83,12 +91,28 @@ data class TripDto(
         destination = destination,
         departureEpochMillis = departureEpochMillis,
         arrivalEpochMillis = arrivalEpochMillis,
-        busClass = BusClass.valueOf(busClass.uppercase()),
+        busClass = busClass.toBusClass(),
         farePhp = farePhp,
         availableSeatCount = availableSeatCount,
         operatorRating = operatorRating,
-        rideKind = runCatching { RideKind.valueOf(rideKind.uppercase()) }.getOrDefault(RideKind.BUS),
+        rideKind = rideKind.toRideKind(),
     )
+
+    companion object {
+        fun from(trip: Trip) = TripDto(
+            id = trip.id,
+            operatorName = trip.operatorName,
+            origin = trip.origin,
+            destination = trip.destination,
+            departureEpochMillis = trip.departureEpochMillis,
+            arrivalEpochMillis = trip.arrivalEpochMillis,
+            busClass = trip.busClass.name,
+            farePhp = trip.farePhp,
+            availableSeatCount = trip.availableSeatCount,
+            operatorRating = trip.operatorRating,
+            rideKind = trip.rideKind.name,
+        )
+    }
 }
 
 @Serializable
@@ -101,7 +125,7 @@ data class JourneyLegDto(
     val note: String? = null,
 ) {
     fun toDomain() = JourneyLeg(
-        kind = runCatching { RideKind.valueOf(kind.uppercase()) }.getOrDefault(RideKind.BUS),
+        kind = kind.toRideKind(),
         from = from,
         to = to,
         durationMinutes = durationMinutes,
@@ -133,6 +157,9 @@ data class TicketDto(
     val paymentStatus: String,
     val qrPayload: String,
     val reservationExpiresAtEpochMillis: Long? = null,
+    /** CONFIRMED | CANCELLED | REFUNDED; absent means CONFIRMED (older servers). */
+    val status: String? = null,
+    val clientReference: String? = null,
 ) {
     fun toDomain() = Ticket(
         id = id,
@@ -140,13 +167,34 @@ data class TicketDto(
         seatLabels = seatLabels,
         primaryPassenger = Passenger(
             fullName = passengerFullName,
-            type = PassengerType.valueOf(passengerType.uppercase()),
+            type = passengerType.toPassengerType(),
             discountIdImagePath = discountIdImagePath,
         ),
         coPassengers = coPassengers.map { it.toDomain() },
         infantCount = infantCount,
-        paymentStatus = PaymentStatus.valueOf(paymentStatus.uppercase()),
+        paymentStatus = paymentStatus.toPaymentStatus(),
         qrPayload = qrPayload,
         reservationExpiresAtEpochMillis = reservationExpiresAtEpochMillis,
+        status = status.toBookingStatus(),
+        clientReference = clientReference,
     )
+
+    companion object {
+        /** For the ticket cache: the mocks and the real client share one on-disk shape. */
+        fun from(ticket: Ticket) = TicketDto(
+            id = ticket.id,
+            trip = TripDto.from(ticket.trip),
+            seatLabels = ticket.seatLabels,
+            passengerFullName = ticket.primaryPassenger.fullName,
+            passengerType = ticket.primaryPassenger.type.name,
+            discountIdImagePath = ticket.primaryPassenger.discountIdImagePath,
+            coPassengers = ticket.coPassengers.map { CoPassengerDto.from(it) },
+            infantCount = ticket.infantCount,
+            paymentStatus = ticket.paymentStatus.name,
+            qrPayload = ticket.qrPayload,
+            reservationExpiresAtEpochMillis = ticket.reservationExpiresAtEpochMillis,
+            status = ticket.status.name,
+            clientReference = ticket.clientReference,
+        )
+    }
 }

@@ -10,6 +10,12 @@ data class Seat(
     val column: Int,
     val status: SeatStatus,
     val lockedByUserId: String? = null,
+    /**
+     * When the current hold lapses, if the server told us. Only meaningful for
+     * LOCKED / SELECTED; cleared whenever the seat becomes AVAILABLE or OCCUPIED
+     * so a stale expiry never outlives the hold it described.
+     */
+    val lockExpiresAtEpochMillis: Long? = null,
 )
 
 enum class SeatStatus {

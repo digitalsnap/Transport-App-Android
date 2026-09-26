@@ -1,5 +1,6 @@
 package com.ridevibe.app.ui.theme
 
+import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -9,8 +10,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 
 // RideVibe brand palette — Tiffany blue color pass (design: ridevibe-ui-design-redesign):
 // Charcoal is the only dark anchor (bars, chrome); Tiffany is reserved for actions
@@ -91,6 +95,29 @@ private val RideVibeShapes = Shapes(
     extraLarge = RoundedCornerShape(28.dp),
 )
 
+/**
+ * Sets the status- and navigation-bar icon colour for as long as the caller is
+ * composed. [lightIcons] true = white icons (for charcoal chrome); false = dark
+ * icons (for a screen drawn straight on the light canvas). Restored on dispose.
+ */
+@Composable
+fun SystemBarIcons(lightIcons: Boolean) {
+    val view = LocalView.current
+    if (view.isInEditMode) return
+    DisposableEffect(view, lightIcons) {
+        val window = (view.context as? Activity)?.window ?: return@DisposableEffect onDispose {}
+        val controller = WindowCompat.getInsetsController(window, view)
+        val previousStatus = controller.isAppearanceLightStatusBars
+        val previousNavigation = controller.isAppearanceLightNavigationBars
+        controller.isAppearanceLightStatusBars = !lightIcons
+        controller.isAppearanceLightNavigationBars = !lightIcons
+        onDispose {
+            controller.isAppearanceLightStatusBars = previousStatus
+            controller.isAppearanceLightNavigationBars = previousNavigation
+        }
+    }
+}
+
 /** Charcoal chrome for center-aligned top app bars (design rule: Charcoal anchors all bars). */
 @Composable
 fun charcoalTopBarColors(): TopAppBarColors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -105,6 +132,12 @@ fun RideVibeTheme(
     useDarkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
+    // Edge-to-edge: the status bar sits on the charcoal strip the root Scaffold
+    // draws and the navigation bar on the charcoal bottom nav / scrim. Both are
+    // Charcoal in either scheme (design rule: Charcoal anchors all bars), so the
+    // system icons are light in either scheme too. A screen that needs otherwise
+    // can call [SystemBarIcons] itself.
+    SystemBarIcons(lightIcons = true)
     MaterialTheme(
         colorScheme = if (useDarkTheme) DarkColors else LightColors,
         typography = RideVibeTypography,

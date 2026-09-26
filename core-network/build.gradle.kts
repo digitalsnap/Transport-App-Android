@@ -17,6 +17,10 @@ val apiBaseUrlDebug = (findProperty("ridevibe.apiBaseUrl.debug") as String?)
 val apiBaseUrlRelease = (findProperty("ridevibe.apiBaseUrl.release") as String?)
     ?: "https://api.ridevibe.example.com/"
 val useMockData = (findProperty("ridevibe.useMocks") as String?)?.toBoolean() ?: true
+if (useMockData) {
+    // Beta builds ship on mocks on purpose; make it impossible to do so silently.
+    logger.warn("RideVibe: ridevibe.useMocks=true - release APKs from this build run on the in-app mock backend.")
+}
 
 // Derived so the socket URL can never drift from the REST URL.
 fun webSocketUrlFor(httpUrl: String): String = httpUrl
@@ -30,6 +34,8 @@ android {
 
     defaultConfig {
         minSdk = 24
+        // R8 rules for the DTOs/Retrofit services travel with the module that owns them.
+        consumerProguardFiles("consumer-rules.pro")
     }
 
     buildFeatures {
@@ -74,6 +80,9 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
+    testImplementation(libs.okhttp.mockwebserver)
 }
 
 // ── Seed export ──────────────────────────────────────────────────────────────

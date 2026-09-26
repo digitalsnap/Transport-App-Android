@@ -1,7 +1,8 @@
 """Generate XlsxSeedData.kt from the transport-research workbook.
 
 Usage:
-    python tools/generate_xlsx_seed.py "D:\\Downloads\\Chrome\\Philippine_Transport_Terminals_and_Fares_2026.xlsx"
+    pip install -r tools/requirements.txt
+    python tools/generate_xlsx_seed.py <path-to-workbook.xlsx>
 
 Parses sheet 8 (DIRECT ROUTES - Bus) and sheet 9 (DIRECT ROUTES - Sea) into
 core-network/src/main/java/com/ridevibe/core/network/mock/XlsxSeedData.kt.

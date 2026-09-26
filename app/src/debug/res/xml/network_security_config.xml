@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug override of res/xml/network_security_config.xml. Debug builds talk
+     to a local CRS over plain HTTP: 10.0.2.2 from the emulator, or whatever
+     LAN address the developer passes as -Pridevibe.apiBaseUrl.debug (see
+     CLAUDE.md §6). A domain list cannot express "any LAN IP", so cleartext is
+     permitted for every host here; release keeps the HTTPS-only base config. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

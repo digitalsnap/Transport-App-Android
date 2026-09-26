@@ -6,9 +6,16 @@ import com.ridevibe.core.domain.model.TerminalLocation
 import com.ridevibe.core.domain.model.Trip
 import com.ridevibe.core.domain.repository.TripRepository
 import com.ridevibe.core.network.api.CrsApiService
+import com.ridevibe.core.network.api.passengerApiResult
+import com.ridevibe.core.network.dto.toBusClass
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * `/v1` catalog and search. Every call goes through [passengerApiResult] so a
+ * server `{message}`, a dead connection (code 0) and cancellation are handled
+ * the same way the seat and checkout repositories handle them.
+ */
 @Singleton
 class TripRepositoryImpl @Inject constructor(
     private val apiService: CrsApiService,
@@ -19,29 +26,29 @@ class TripRepositoryImpl @Inject constructor(
         destination: String,
         departureDateEpochMillis: Long,
         busClass: BusClass?,
-    ): Result<List<Trip>> = runCatching {
+    ): Result<List<Trip>> = passengerApiResult {
         apiService.searchTrips(origin, destination, departureDateEpochMillis, busClass?.name)
             .map { it.toDomain() }
     }
 
     override suspend fun getTrip(tripId: String): Result<Trip> =
-        runCatching { apiService.getTrip(tripId).toDomain() }
+        passengerApiResult { apiService.getTrip(tripId).toDomain() }
 
     override suspend fun searchRelated(
         query: String,
         departureDateEpochMillis: Long,
         returnDateEpochMillis: Long?,
-    ): Result<List<Trip>> = runCatching {
+    ): Result<List<Trip>> = passengerApiResult {
         apiService.searchRelatedTrips(query, departureDateEpochMillis, returnDateEpochMillis).map { it.toDomain() }
     }
 
     override suspend fun findJourneys(query: String): Result<List<Journey>> =
-        runCatching { apiService.findJourneys(query).map { it.toDomain() } }
+        passengerApiResult { apiService.findJourneys(query).map { it.toDomain() } }
 
-    override suspend fun getLocations(): List<TerminalLocation> =
-        runCatching { apiService.getLocations().map { it.toDomain() } }.getOrDefault(emptyList())
+    override suspend fun getLocations(): Result<List<TerminalLocation>> =
+        passengerApiResult { apiService.getLocations().map { it.toDomain() } }
 
-    override suspend fun getAvailableBusClasses(): List<BusClass> =
-        runCatching { apiService.getBusClasses().map { BusClass.valueOf(it.uppercase()) } }
-            .getOrDefault(BusClass.entries.toList())
+    // Lenient: an unknown class name collapses to ORDINARY (and is logged) rather than crashing Home.
+    override suspend fun getAvailableBusClasses(): Result<List<BusClass>> =
+        passengerApiResult { apiService.getBusClasses().map { it.toBusClass() }.distinct().sorted() }
 }

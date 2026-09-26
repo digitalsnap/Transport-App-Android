@@ -2,13 +2,14 @@ package com.ridevibe.feature.admin.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ridevibe.core.domain.format.PhTime
 import com.ridevibe.core.domain.model.AllocatedSeat
 import com.ridevibe.core.domain.model.RideKind
 import com.ridevibe.core.domain.model.TripOccupancy
 import com.ridevibe.core.domain.repository.AdminRepository
-import com.ridevibe.feature.admin.ui.shiftIsoDay
-import com.ridevibe.feature.admin.ui.todayPhIso
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,14 +17,22 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+private const val TRIPS_PAGE_SIZE = 50
+private const val FILTER_DEBOUNCE_MS = 300L
+
 data class AdminTripsUiState(
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
+    val isLoadingMore: Boolean = false,
     val error: String? = null,
     /** PH calendar date, `yyyy-MM-dd`; defaults to today. */
-    val dateIso: String = todayPhIso(),
+    val dateIso: String = PhTime.todayIso(),
     val operatorFilter: String = "",
     val placeFilter: String = "",
     val trips: List<TripOccupancy> = emptyList(),
+    /** False until the first page for the current filters has answered — "no trips" is only true after that. */
+    val hasLoaded: Boolean = false,
+    /** True while the last page came back full, i.e. another `offset` may yield more. */
+    val canLoadMore: Boolean = false,
     /** Sheet: the tapped departure and, for buses, its allocation grid. */
     val selectedTrip: TripOccupancy? = null,
     val seats: List<AllocatedSeat> = emptyList(),
@@ -42,7 +51,15 @@ class AdminTripsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(AdminTripsUiState())
     val uiState: StateFlow<AdminTripsUiState> = _uiState.asStateFlow()
 
-    init {
+    private var sessionKey: String? = null
+    private var debounceJob: Job? = null
+    private var loadJob: Job? = null
+
+    fun start(sessionKey: String) {
+        if (this.sessionKey == sessionKey) return
+        this.sessionKey = sessionKey
+        debounceJob?.cancel()
+        _uiState.value = AdminTripsUiState()
         load()
     }
 
@@ -50,31 +67,86 @@ class AdminTripsViewModel @Inject constructor(
 
     fun nextDay() = changeDay(+1)
 
-    private fun changeDay(delta: Int) {
-        _uiState.update { it.copy(dateIso = shiftIsoDay(it.dateIso, delta)) }
+    fun setDate(isoDay: String) {
+        if (!PhTime.isValidIso(isoDay)) return
+        _uiState.update { it.copy(dateIso = isoDay) }
         load()
     }
 
-    fun onOperatorFilterChanged(value: String) = _uiState.update { it.copy(operatorFilter = value) }
+    private fun changeDay(delta: Int) {
+        _uiState.update { it.copy(dateIso = PhTime.plusDays(it.dateIso, delta)) }
+        load()
+    }
 
-    fun onPlaceFilterChanged(value: String) = _uiState.update { it.copy(placeFilter = value) }
+    fun onOperatorFilterChanged(value: String) {
+        _uiState.update { it.copy(operatorFilter = value) }
+        scheduleLoad()
+    }
 
+    fun onPlaceFilterChanged(value: String) {
+        _uiState.update { it.copy(placeFilter = value) }
+        scheduleLoad()
+    }
+
+    /** Typing in a filter reloads after a short pause, so each keystroke is not a request. */
+    private fun scheduleLoad() {
+        debounceJob?.cancel()
+        debounceJob = viewModelScope.launch {
+            delay(FILTER_DEBOUNCE_MS)
+            load()
+        }
+    }
+
+    /** First page for the current date and filters; replaces the list. */
     fun load() {
+        debounceJob?.cancel()
+        loadJob?.cancel()
         val state = _uiState.value
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
-            adminRepository.getTrips(
-                dateIso = state.dateIso,
-                operator = state.operatorFilter.trim(),
-                place = state.placeFilter.trim(),
-                limit = 200,
-            )
-                .onSuccess { trips -> _uiState.update { it.copy(isLoading = false, trips = trips) } }
+            fetchPage(state, offset = 0)
+                .onSuccess { page ->
+                    _uiState.update {
+                        it.copy(isLoading = false, hasLoaded = true, trips = page, canLoadMore = page.size >= TRIPS_PAGE_SIZE)
+                    }
+                }
                 .onFailure { throwable ->
-                    _uiState.update { it.copy(isLoading = false, error = throwable.message ?: "Unable to load trips") }
+                    _uiState.update { it.copy(isLoading = false, error = throwable.staffMessage("Unable to load trips")) }
                 }
         }
     }
+
+    /** Next page with `offset = trips.size`, appended. */
+    fun loadMore() {
+        val state = _uiState.value
+        if (state.isLoading || state.isLoadingMore || !state.canLoadMore) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingMore = true, error = null) }
+            fetchPage(state, offset = state.trips.size)
+                .onSuccess { page ->
+                    _uiState.update { current ->
+                        val known = current.trips.map { it.id }.toSet()
+                        current.copy(
+                            isLoadingMore = false,
+                            trips = current.trips + page.filter { it.id !in known },
+                            canLoadMore = page.size >= TRIPS_PAGE_SIZE,
+                        )
+                    }
+                }
+                .onFailure { throwable ->
+                    _uiState.update { it.copy(isLoadingMore = false, error = throwable.staffMessage("Unable to load more trips")) }
+                }
+        }
+    }
+
+    private suspend fun fetchPage(state: AdminTripsUiState, offset: Int): Result<List<TripOccupancy>> =
+        adminRepository.getTrips(
+            dateIso = state.dateIso,
+            operator = state.operatorFilter.trim(),
+            place = state.placeFilter.trim(),
+            limit = TRIPS_PAGE_SIZE,
+            offset = offset,
+        )
 
     /** Seat maps are a bus concept — ferries and fastcraft show the occupancy summary only. */
     fun openTrip(trip: TripOccupancy) {
@@ -85,7 +157,7 @@ class AdminTripsViewModel @Inject constructor(
             adminRepository.getTripSeats(trip.id)
                 .onSuccess { seats -> _uiState.update { it.copy(isSeatsLoading = false, seats = seats) } }
                 .onFailure { throwable ->
-                    _uiState.update { it.copy(isSeatsLoading = false, seatsError = throwable.message ?: "Unable to load seats") }
+                    _uiState.update { it.copy(isSeatsLoading = false, seatsError = throwable.staffMessage("Unable to load seats")) }
                 }
         }
     }

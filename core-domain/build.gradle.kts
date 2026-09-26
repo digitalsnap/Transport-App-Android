@@ -5,6 +5,8 @@ plugins {
 // Pure Kotlin module — no Android/Framework dependencies per Clean Architecture rules.
 dependencies {
     implementation(libs.kotlinx.coroutines.core)
-    implementation("javax.inject:javax.inject:1")
+    implementation(libs.javax.inject)
     testImplementation(kotlin("test"))
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

@@ -1,5 +1,6 @@
 package com.ridevibe.core.network.mock
 
+import com.ridevibe.core.domain.format.PhTime
 import com.ridevibe.core.domain.model.AccountCredential
 import com.ridevibe.core.domain.model.AdminOverview
 import com.ridevibe.core.domain.model.AllocatedSeat
@@ -43,11 +44,11 @@ import com.ridevibe.core.domain.repository.StaffAuthRepository
 import com.ridevibe.core.network.api.CrsApiException
 import com.ridevibe.core.network.api.apiResult
 import com.ridevibe.core.network.auth.StaffSessionStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
-import java.util.Calendar
+import kotlinx.coroutines.withContext
 import java.util.Locale
-import java.util.TimeZone
 import java.util.UUID
 import kotlin.random.Random
 import javax.inject.Inject
@@ -70,57 +71,20 @@ private const val TRIP_HORIZON_DAYS = 14
 /** The one-time key the mock mailer "sends"; mirrors the backend's devCode outside production. */
 private const val DEV_EMAIL_CODE = "123456"
 
-private suspend fun <T> mockCall(block: () -> T): Result<T> = apiResult {
-    delay(STAFF_LATENCY_MS)
-    block()
+/** Mirrors the server's `expiresInDays: 7` on every session. */
+private const val STAFF_SESSION_DAYS = 7
+
+/** A mock "server call": off the main thread, with latency, refusals shaped as the CRS would. */
+private suspend fun <T> mockCall(block: () -> T): Result<T> = withContext(Dispatchers.Default) {
+    apiResult {
+        delay(STAFF_LATENCY_MS)
+        block()
+    }
 }
 
 private fun refuse(code: Int, message: String): Nothing = throw CrsApiException(code, message)
 
-// ── PH calendar helpers ───────────────────────────────────────────────────────
-// java.util.Calendar because the app has no core-library desugaring (minSdk 24).
-
-internal object PhTime {
-    private val zone: TimeZone = TimeZone.getTimeZone("Asia/Manila")
-    private val isoDate = Regex("""^(\d{4})-(\d{2})-(\d{2})$""")
-    private val hm = Regex("""^([01]\d|2[0-3]):([0-5]\d)$""")
-
-    fun isValidIso(dateIso: String): Boolean = isoDate.matches(dateIso)
-
-    fun isValidHm(time: String): Boolean = hm.matches(time)
-
-    fun todayIso(): String = isoOf(System.currentTimeMillis())
-
-    fun isoOf(epochMillis: Long): String {
-        val c = Calendar.getInstance(zone)
-        c.timeInMillis = epochMillis
-        return String.format(Locale.US, "%04d-%02d-%02d", c[Calendar.YEAR], c[Calendar.MONTH] + 1, c[Calendar.DAY_OF_MONTH])
-    }
-
-    fun hourOf(epochMillis: Long): Int {
-        val c = Calendar.getInstance(zone)
-        c.timeInMillis = epochMillis
-        return c[Calendar.HOUR_OF_DAY]
-    }
-
-    /** Epoch millis of [dateIso] at [hour]:[minute] PH time, or null when malformed. */
-    fun at(dateIso: String, hour: Int, minute: Int = 0): Long? {
-        val m = isoDate.matchEntire(dateIso) ?: return null
-        val (y, mo, d) = m.destructured
-        val c = Calendar.getInstance(zone)
-        c.clear()
-        c.set(y.toInt(), mo.toInt() - 1, d.toInt(), hour, minute, 0)
-        return c.timeInMillis
-    }
-
-    fun dayRange(dateIso: String): LongRange? {
-        val start = at(dateIso, 0) ?: return null
-        return start until start + DAY_MS
-    }
-
-    fun plusDays(dateIso: String, days: Int): String =
-        isoOf((at(dateIso, 12) ?: System.currentTimeMillis()) + days * DAY_MS)
-}
+// PH calendar arithmetic lives in core-domain (com.ridevibe.core.domain.format.PhTime).
 
 // ── In-memory staff world ─────────────────────────────────────────────────────
 
@@ -315,6 +279,7 @@ class MockStaffDatabase @Inject constructor(
             role = account.role,
             operatorId = account.operatorId,
             operatorName = account.operatorId?.let { operatorName(it) },
+            expiresAtEpochMillis = System.currentTimeMillis() + STAFF_SESSION_DAYS * DAY_MS,
         )
     }
 
@@ -443,7 +408,11 @@ class MockStaffDatabase @Inject constructor(
         prepare()
         val needle = query.trim().lowercase()
         bookings.values.asSequence()
-            .filter { status == null || it.status == status }
+            // REFUNDED is a rider-facing status; on the support side it is the refund flag.
+            .filter {
+                status == null || it.status == status ||
+                    (status == BookingStatus.REFUNDED && it.refundStatus == RefundStatus.REFUNDED)
+            }
             .filter { b ->
                 needle.isEmpty() ||
                     b.id.lowercase().contains(needle) ||
@@ -484,6 +453,8 @@ class MockStaffDatabase @Inject constructor(
             refundNote = note?.takeIf { it.isNotBlank() },
             refundedAt = if (status == RefundStatus.REFUNDED) System.currentTimeMillis() else booking.refundedAt,
         )
+        // The rider's own ticket (if this booking came from the rider flow) must read REFUNDED too.
+        if (status == RefundStatus.REFUNDED) db.setTicketStatus(bookingId, BookingStatus.REFUNDED)
         status
     }
 
@@ -1006,10 +977,23 @@ class MockStaffDatabase @Inject constructor(
         }
     }
 
-    /** Tickets booked in the rider flow appear as support bookings (user "me"). */
+    /**
+     * Tickets booked in the rider flow appear as support bookings (user "me"),
+     * and a rider ticket that lapsed (unpaid cash reservation) is reflected
+     * here as a cancellation so the manifest never lists a dead booking.
+     */
     private fun syncPassengerTickets() {
         db.allTickets().forEach { ticket ->
-            if (bookings.containsKey(ticket.id)) return@forEach
+            bookings[ticket.id]?.let { existing ->
+                if (existing.status == BookingStatus.CONFIRMED && ticket.status == BookingStatus.CANCELLED) {
+                    bookings[ticket.id] = existing.copy(
+                        status = BookingStatus.CANCELLED,
+                        cancelledAt = System.currentTimeMillis(),
+                        cancelReason = "Cash-on-board reservation lapsed unpaid",
+                    )
+                }
+                return@forEach
+            }
             val t = ticket.trip
             trips.getOrPut(t.id) {
                 Trip(
@@ -1024,13 +1008,13 @@ class MockStaffDatabase @Inject constructor(
                     departureEpochMillis = t.departureEpochMillis,
                     arrivalEpochMillis = t.arrivalEpochMillis,
                     farePhp = t.farePhp,
-                    capacity = 40,
+                    capacity = if (t.busClass == BusClass.LUXURY) 30 else 44, // same rule as Service.capacity
                 )
             }
             bookings[ticket.id] = Booking(
                 id = ticket.id,
                 tripId = t.id,
-                userId = "me",
+                userId = MOCK_CURRENT_USER_ID,
                 passengerFullName = ticket.primaryPassenger.fullName,
                 passengerType = ticket.primaryPassenger.type,
                 infantCount = ticket.infantCount,
@@ -1047,13 +1031,28 @@ class MockStaffDatabase @Inject constructor(
                 cancelledAt = null,
                 refundedAt = null,
                 coPassengers = ticket.coPassengers,
-            )
+            ).let { booking ->
+                // A rider ticket already cancelled/refunded arrives in that state.
+                when (ticket.status) {
+                    BookingStatus.CONFIRMED -> booking
+                    BookingStatus.CANCELLED -> booking.copy(status = BookingStatus.CANCELLED, cancelledAt = System.currentTimeMillis())
+                    BookingStatus.REFUNDED -> booking.copy(
+                        status = BookingStatus.CANCELLED,
+                        refundStatus = RefundStatus.REFUNDED,
+                        cancelledAt = System.currentTimeMillis(),
+                        refundedAt = System.currentTimeMillis(),
+                    )
+                }
+            }
         }
     }
 
     private fun freeSeats(trip: Trip, labels: List<String>, bookingId: String) {
         if (trip.isExternal) {
-            labels.forEach { db.updateSeat(trip.id, it, SeatStatus.AVAILABLE, lockedBy = null) }
+            // Rider-side ticket: cancelling it there frees its seats (or sea spaces) and updates its status.
+            if (!db.setTicketStatus(bookingId, BookingStatus.CANCELLED)) {
+                labels.forEach { db.updateSeat(trip.id, it, SeatStatus.AVAILABLE, lockedBy = null) }
+            }
             return
         }
         val list = seats[trip.id] ?: return
@@ -1195,10 +1194,13 @@ class MockStaffAuthRepository @Inject constructor(
     override suspend fun signInWithGoogle(idToken: String): Result<StaffSession> =
         mockCall { refuse(503, "Google sign-in is not configured (GOOGLE_CLIENT_ID)") }
 
-    /** The persisted mock session is always considered valid until sign-out. */
-    override suspend fun refreshSession(): Result<StaffSession?> = Result.success(sessionStore.session.value)
+    /** The persisted mock session is valid until sign-out or its 7-day lifetime passes. */
+    override suspend fun refreshSession(): Result<StaffSession?> {
+        if (sessionStore.isExpired()) sessionStore.clear()
+        return Result.success(sessionStore.session.value)
+    }
 
-    override suspend fun signOut() {
+    override suspend fun signOut() = withContext(Dispatchers.Default) {
         delay(STAFF_LATENCY_MS / 2)
         sessionStore.clear()
     }

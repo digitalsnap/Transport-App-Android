@@ -26,7 +26,9 @@ import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -37,75 +39,33 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ridevibe.app.ui.theme.charcoalTopBarColors
+import com.ridevibe.core.domain.format.PhTime
+import com.ridevibe.core.domain.format.formatPhp
 import com.ridevibe.core.domain.model.Itinerary
 import com.ridevibe.core.domain.model.JourneyLeg
 import com.ridevibe.core.domain.model.RideKind
-import com.ridevibe.core.domain.repository.ItineraryRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import javax.inject.Inject
-
-data class ItineraryUiState(
-    val isLoading: Boolean = true,
-    val itineraries: List<Itinerary> = emptyList(),
-)
-
-// ItineraryRepository is injected directly (no use-case layer): CRUD over the
-// traveller's saved plans. Screen + VM share a file until the feature grows.
-@HiltViewModel
-class ItineraryViewModel @Inject constructor(
-    private val itineraryRepository: ItineraryRepository,
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(ItineraryUiState())
-    val uiState: StateFlow<ItineraryUiState> = _uiState.asStateFlow()
-
-    init {
-        refresh()
-    }
-
-    fun refresh() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            _uiState.update { it.copy(isLoading = false, itineraries = itineraryRepository.getItineraries()) }
-        }
-    }
-
-    fun toggleLeg(itinerary: Itinerary, legIndex: Int) {
-        viewModelScope.launch {
-            itineraryRepository.setLegDone(itinerary.id, legIndex, legIndex !in itinerary.doneLegIndices)
-            _uiState.update { it.copy(itineraries = itineraryRepository.getItineraries()) }
-        }
-    }
-
-    fun remove(itineraryId: String) {
-        viewModelScope.launch {
-            itineraryRepository.removeItinerary(itineraryId)
-            _uiState.update { it.copy(itineraries = itineraryRepository.getItineraries()) }
-        }
-    }
-}
 
 /**
  * The traveller's saved multi-leg plans (replaces the old QR scan tab). Tick
@@ -119,10 +79,45 @@ fun ItineraryScreen(
     onExploreDestination: (query: String) -> Unit,
     viewModel: ItineraryViewModel = hiltViewModel(),
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Undo lives in the snackbar: ActionPerformed restores the plan, anything else lets it go.
+    LaunchedEffect(uiState.pendingUndo) {
+        val removed = uiState.pendingUndo ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = "Removed ${removed.journey.from} → ${removed.journey.to}",
+            actionLabel = "Undo",
+            duration = SnackbarDuration.Short,
+        )
+        if (result == SnackbarResult.ActionPerformed) viewModel.undoRemove() else viewModel.onUndoExpired()
+    }
+    LaunchedEffect(uiState.actionError) {
+        val text = uiState.actionError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(text)
+        viewModel.onActionErrorShown()
+    }
+
+    // The plan awaiting delete confirmation (not saveable: Itinerary is not Parcelable; a rotation just closes the dialog).
+    var confirmRemove by remember { mutableStateOf<Itinerary?>(null) }
+    confirmRemove?.let { itinerary ->
+        AlertDialog(
+            onDismissRequest = { confirmRemove = null },
+            title = { Text("Remove this plan?", fontWeight = FontWeight.Bold) },
+            text = { Text("${itinerary.journey.from} → ${itinerary.journey.to} and its ticked legs will be removed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemove = null
+                    viewModel.remove(itinerary)
+                }) { Text("Remove", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemove = null }) { Text("Keep") } },
+        )
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("My Itinerary", fontWeight = FontWeight.Bold) },
@@ -146,6 +141,16 @@ fun ItineraryScreen(
                 contentAlignment = Alignment.Center,
             ) { CircularProgressIndicator() }
 
+            uiState.error != null -> Column(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(uiState.error.orEmpty(), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(onClick = viewModel::refresh) { Text("Retry", fontWeight = FontWeight.Bold) }
+            }
+
             uiState.itineraries.isEmpty() -> EmptyItinerary(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 onExploreDestination = onExploreDestination,
@@ -160,8 +165,10 @@ fun ItineraryScreen(
                     ItineraryCard(
                         itinerary = itinerary,
                         onToggleLeg = { index -> viewModel.toggleLeg(itinerary, index) },
-                        onFindLeg = { leg -> onFindLeg(leg.from, leg.to, itinerary.startDateMillis) },
-                        onRemove = { viewModel.remove(itinerary.id) },
+                        onFindLeg = { index, leg ->
+                            onFindLeg(leg.from, leg.to, ItineraryViewModel.legSearchDateMillis(itinerary, index))
+                        },
+                        onRemove = { confirmRemove = itinerary },
                     )
                 }
             }
@@ -193,6 +200,7 @@ private fun EmptyItinerary(modifier: Modifier, onExploreDestination: (String) ->
             textAlign = TextAlign.Center,
         )
         Spacer(modifier = Modifier.height(16.dp))
+        // Each chip opens Explore with that destination as the query.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("Siargao", "Boracay", "Visayas").forEach { destination ->
                 AssistChip(
@@ -208,7 +216,7 @@ private fun EmptyItinerary(modifier: Modifier, onExploreDestination: (String) ->
 private fun ItineraryCard(
     itinerary: Itinerary,
     onToggleLeg: (Int) -> Unit,
-    onFindLeg: (JourneyLeg) -> Unit,
+    onFindLeg: (index: Int, leg: JourneyLeg) -> Unit,
     onRemove: () -> Unit,
 ) {
     val journey = itinerary.journey
@@ -226,12 +234,12 @@ private fun ItineraryCard(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        "${journey.title} · starts ${formatDate(itinerary.startDateMillis)}",
+                        "${journey.title} · starts ${PhTime.formatDateTime(itinerary.startDateMillis, "EEE, d MMM")}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "~${journey.totalDurationMinutes / 60}h travel · est. ₱%,.0f".format(journey.totalFarePhp),
+                        "~${journey.totalDurationMinutes / 60}h travel · est. ${formatPhp(journey.totalFarePhp, showCentavos = false)}",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
@@ -270,10 +278,10 @@ private fun ItineraryCard(
                 val done = index in itinerary.doneLegIndices
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    // Tick off a leg once it's travelled.
-                    IconButton(onClick = { onToggleLeg(index) }, modifier = Modifier.size(32.dp)) {
+                    // Tick off a leg once it's travelled. Default IconButton size keeps the 48dp target.
+                    IconButton(onClick = { onToggleLeg(index) }) {
                         Icon(
                             if (done) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
                             contentDescription = if (done) "Mark leg not done" else "Mark leg done",
@@ -283,8 +291,8 @@ private fun ItineraryCard(
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 8.dp)
-                            .clickable { onFindLeg(leg) },
+                            .clickable(role = Role.Button, onClickLabel = "Find trips for this leg") { onFindLeg(index, leg) }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -306,7 +314,10 @@ private fun ItineraryCard(
                             )
                         }
                         Text(
-                            "${leg.durationMinutes / 60}h %02dm · ~₱%,.0f".format(leg.durationMinutes % 60, leg.indicativeFarePhp),
+                            "${leg.durationMinutes / 60}h %02dm · ~%s".format(
+                                leg.durationMinutes % 60,
+                                formatPhp(leg.indicativeFarePhp, showCentavos = false),
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -319,17 +330,15 @@ private fun ItineraryCard(
                             )
                         }
                     }
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = "Find trips for this leg",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { onFindLeg(leg) },
-                    )
+                    IconButton(onClick = { onFindLeg(index, leg) }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Find trips for this leg",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
             }
         }
     }
 }
-
-private fun formatDate(epochMillis: Long): String =
-    SimpleDateFormat("EEE, d MMM", Locale.getDefault()).format(Date(epochMillis))

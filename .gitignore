@@ -14,3 +14,13 @@ captures/
 keystore.properties
 firebase-service-account.json
 !gradle/wrapper/gradle-wrapper.jar
+docs/CHECKLIST.md
+
+# Defensive: credentials and scratch files must never be committed
+*.pem
+*.p12
+*.p8
+.env
+.env.*
+scratch_*
+service-account*.json

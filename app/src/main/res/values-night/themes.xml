@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Night variant of Theme.RideVibe.Main: the window background matches the
+         dark canvas in ui/theme/Theme.kt so there is no light flash before
+         Compose draws. The splash theme needs no variant: charcoal both ways. -->
+    <style name="Theme.RideVibe.Main" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/brand_dark_canvas</item>
+    </style>
+</resources>

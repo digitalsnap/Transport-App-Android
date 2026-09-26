@@ -3,6 +3,7 @@ package com.ridevibe.feature.admin.ui.partner
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,19 +13,25 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ridevibe.core.domain.model.RideKind
 import com.ridevibe.feature.admin.ui.components.EmptyText
+import com.ridevibe.feature.admin.ui.components.ErrorWithRetry
 import com.ridevibe.feature.admin.ui.components.InlineError
 import com.ridevibe.feature.admin.ui.components.LoadingRow
 import com.ridevibe.feature.admin.ui.components.MicroLabel
@@ -44,26 +51,37 @@ import com.ridevibe.feature.admin.viewmodel.PartnerOverviewViewModel
 /** Overview: the operator's headline numbers and today's departures. */
 @Composable
 fun PartnerOverviewTab(
+    sessionKey: String,
     operatorId: Int?,
+    wide: Boolean,
     viewModel: PartnerOverviewViewModel,
 ) {
-    val state by viewModel.uiState.collectAsState()
-    LaunchedEffect(operatorId) { viewModel.start(operatorId) }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(sessionKey, operatorId) { viewModel.start(sessionKey, operatorId) }
+    val overview = state.overview
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { PageHeader("Overview", "Your services, upcoming departures and seats sold") }
-        state.error?.let { item { InlineError(it) } }
+        item {
+            Row(verticalAlignment = Alignment.Top) {
+                PageHeader("Overview", "Your services, upcoming departures and seats sold", modifier = Modifier.weight(1f))
+                IconButton(onClick = viewModel::load, enabled = !state.isLoading) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh overview")
+                }
+            }
+        }
         when {
-            state.isLoading && state.overview == null -> item { LoadingRow() }
-            state.overview != null -> {
-                val overview = state.overview!!
+            state.isLoading && overview == null -> item { LoadingRow() }
+            state.error != null && overview == null -> item { ErrorWithRetry(state.error!!, onRetry = viewModel::load) }
+            overview != null -> {
+                state.error?.let { item { InlineError(it) } }
                 item {
                     StatTileGrid(
-                        listOf(
+                        columns = if (wide) 4 else 2,
+                        tiles = listOf(
                             StatTileSpec("Services", formatCount(overview.services)),
                             StatTileSpec("Routes served", formatCount(overview.routes)),
                             StatTileSpec("Upcoming trips", formatCount(overview.upcomingTrips)),
@@ -75,19 +93,21 @@ fun PartnerOverviewTab(
                 }
             }
         }
-        item {
-            Spacer(modifier = Modifier.height(6.dp))
-            MicroLabel("Today's departures")
-        }
-        when {
-            state.isLoading && state.todaysTrips.isEmpty() -> Unit
-            state.todaysTrips.isEmpty() -> item { EmptyText("No departures today.") }
-            else -> items(state.todaysTrips, key = { it.id }) { trip ->
-                TripOccupancyRow(
-                    trip = trip,
-                    onClick = { viewModel.openTrip(trip) },
-                    selected = state.selectedTrip?.id == trip.id,
-                )
+        if (overview != null) {
+            item {
+                Spacer(modifier = Modifier.height(6.dp))
+                MicroLabel("Today's departures")
+            }
+            when {
+                state.isLoading && state.todaysTrips.isEmpty() -> item { LoadingRow() }
+                state.todaysTrips.isEmpty() -> item { EmptyText("No departures today.") }
+                else -> items(state.todaysTrips, key = { it.id }) { trip ->
+                    TripOccupancyRow(
+                        trip = trip,
+                        onClick = { viewModel.openTrip(trip) },
+                        selected = state.selectedTrip?.id == trip.id,
+                    )
+                }
             }
         }
     }

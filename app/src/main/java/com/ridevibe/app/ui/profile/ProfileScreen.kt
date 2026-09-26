@@ -1,11 +1,13 @@
 package com.ridevibe.app.ui.profile
 
-import android.Manifest
+import android.app.Activity
 import android.content.Context
-import android.content.pm.PackageManager
+import android.content.Intent
+import android.net.Uri
 import android.provider.ContactsContract
-import android.widget.Toast
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,15 +30,18 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -46,29 +51,41 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ridevibe.app.auth.PassengerSession
+import com.ridevibe.app.auth.PassengerSessionViewModel
 import com.ridevibe.app.ui.theme.charcoalTopBarColors
 import com.ridevibe.core.domain.model.Vehicle
+import java.text.DateFormatSymbols
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -76,69 +93,55 @@ import java.util.Locale
 @Composable
 fun ProfileScreen(
     onBack: () -> Unit,
-    /** Opens the staff console (admin / partner dashboards). */
-    onOpenStaffConsole: () -> Unit = {},
+    /** Opens the staff console (admin / partner sign-in). */
+    onOpenStaffConsole: () -> Unit,
+    /** Guest tapped "Sign in": back to Welcome. */
+    onSignIn: () -> Unit,
+    /** Session cleared: leave for Welcome with the back stack emptied. */
+    onSignedOut: () -> Unit,
+    sessionViewModel: PassengerSessionViewModel,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val sessionState by sessionViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(uiState.savedMessage) {
-        uiState.savedMessage?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+        val text = uiState.savedMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(text)
+        viewModel.onSavedMessageShown()
     }
-
-    val certificatePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent(),
-    ) { uri -> uri?.let { viewModel.onCertificatePicked(it.toString()) } }
-
-    // ── Phone auto-fill from the device contact card ─────────────────────────
-    var showContactsRationale by remember { mutableStateOf(false) }
-    var contactsPromptDone by rememberSaveable { mutableStateOf(false) }
-    val contactsPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        // Denied → silent fall back to manual entry.
-        if (granted) readProfilePhoneNumber(context)?.let(viewModel::onPhoneAutoFilled)
+    LaunchedEffect(sessionState.error) {
+        val text = sessionState.error ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(text)
+        sessionViewModel.onErrorShown()
     }
-
-    LaunchedEffect(uiState.isLoaded) {
-        if (uiState.isLoaded && !contactsPromptDone && uiState.profile.mobileNumber.isBlank()) {
-            contactsPromptDone = true
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                readProfilePhoneNumber(context)?.let(viewModel::onPhoneAutoFilled)
-            } else {
-                showContactsRationale = true
-            }
+    LaunchedEffect(sessionState.signedOut) {
+        if (sessionState.signedOut) {
+            sessionViewModel.onSignedOutHandled()
+            onSignedOut()
         }
     }
 
-    if (showContactsRationale) {
-        AlertDialog(
-            onDismissRequest = { showContactsRationale = false },
-            title = { Text("Fill phone from your contact card?", fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    "RideVibe can read the phone number saved on your device's own contact card " +
-                        "to fill it in for you. We only read your card — never your other contacts. " +
-                        "You can always type the number yourself instead.",
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showContactsRationale = false
-                    contactsPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
-                }) { Text("Continue", fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showContactsRationale = false }) { Text("Enter manually") }
-            },
-        )
+    // OpenDocument (not GetContent) so the grant can be made persistable: the
+    // certificate must still open after the provider's temporary grant lapses.
+    val certificatePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        val info = readDocumentInfo(context, uri)
+        viewModel.onCertificatePicked(uri.toString(), info.displayName, info.mimeType, info.sizeBytes)
     }
 
-    // ── Birthdate bottom-sheet picker ────────────────────────────────────────
-    var showBirthdateSheet by remember { mutableStateOf(false) }
+    // Permission-free: the system contacts picker returns one phone row with a
+    // read grant on just that row, so READ_CONTACTS is never needed.
+    val phonePicker = rememberLauncherForActivityResult(PickPhoneNumber()) { uri ->
+        uri?.let { readPickedPhoneNumber(context, it) }?.let(viewModel::onPhonePickedFromContacts)
+    }
+
+    var showBirthdateSheet by rememberSaveable { mutableStateOf(false) }
     if (showBirthdateSheet) {
         BirthdatePickerSheet(
             initialIsoDate = uiState.profile.birthDate,
@@ -150,8 +153,32 @@ fun ProfileScreen(
         )
     }
 
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete your account?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "This signs you out and removes your profile, booking in progress and saved tickets " +
+                        "from this phone. Tickets already issued stay valid for travel.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    sessionViewModel.deleteAccount()
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Keep account") }
+            },
+        )
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("My Profile", fontWeight = FontWeight.Bold) },
@@ -164,121 +191,198 @@ fun ProfileScreen(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
-        ) {
-            // Avatar + intro
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 12.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Filled.Person, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+        when {
+            uiState.isLoading -> Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
+
+            uiState.error != null -> Column(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(uiState.error.orEmpty(), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(onClick = viewModel::load) { Text("Retry", fontWeight = FontWeight.Bold) }
+            }
+
+            else -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+            ) {
+                IdentityHeader(
+                    session = sessionState.session,
+                    profileName = uiState.profile.fullName,
+                    onSignIn = onSignIn,
+                )
+
+                SectionTitle("Customer data")
+                ProfileField("First name", uiState.profile.firstName) { value ->
+                    viewModel.onProfileFieldChanged { it.copy(firstName = value) }
                 }
-                Column(modifier = Modifier.padding(start = 12.dp)) {
+                ProfileField("Last name", uiState.profile.lastName) { value ->
+                    viewModel.onProfileFieldChanged { it.copy(lastName = value) }
+                }
+                ProfileField("Email", uiState.profile.email, error = uiState.fieldErrors.email) { value ->
+                    viewModel.onProfileFieldChanged { it.copy(email = value) }
+                }
+                BirthdateField(
+                    isoDate = uiState.profile.birthDate,
+                    error = uiState.fieldErrors.birthDate,
+                    onClick = { showBirthdateSheet = true },
+                )
+                PhoneField(
+                    value = uiState.profile.mobileNumber,
+                    fromContacts = uiState.phoneFromContacts,
+                    error = uiState.fieldErrors.mobileNumber,
+                    onValueChange = viewModel::onPhoneEdited,
+                    onPickFromContacts = { phonePicker.launch(Unit) },
+                )
+                ProfileField("Address", uiState.profile.address) { value ->
+                    viewModel.onProfileFieldChanged { it.copy(address = value) }
+                }
+
+                SectionTitle("Emergency contact")
+                ProfileField("Contact name", uiState.profile.emergencyContactName) { value ->
+                    viewModel.onProfileFieldChanged { it.copy(emergencyContactName = value) }
+                }
+                ProfileField(
+                    "Contact number",
+                    uiState.profile.emergencyContactNumber,
+                    error = uiState.fieldErrors.emergencyContactNumber,
+                ) { value ->
+                    viewModel.onProfileFieldChanged { it.copy(emergencyContactNumber = value) }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = viewModel::saveProfile,
+                    enabled = uiState.canSaveProfile,
+                    modifier = Modifier.fillMaxWidth().height(52.dp).testTag("profile_save"),
+                    shape = RoundedCornerShape(26.dp),
+                ) {
+                    Text(if (uiState.isSaving) "Saving…" else "Save Profile", fontWeight = FontWeight.Bold)
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
+
+                SectionTitle("My vehicles")
+                Text(
+                    "Register a vehicle now to be ready for Roll-on/Roll-off (RORO) ferry bookings when they launch.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                uiState.vehicles.forEach { vehicle ->
+                    VehicleCard(vehicle = vehicle, onRemove = { viewModel.removeVehicle(vehicle.id) })
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                AddVehicleCard(
+                    plateNumber = uiState.newPlateNumber,
+                    certificateName = uiState.newCertificateName,
+                    canAdd = uiState.canAddVehicle,
+                    error = uiState.vehicleError,
+                    onPlateChanged = viewModel::onNewPlateNumberChanged,
+                    onPickCertificate = { certificatePicker.launch(arrayOf("image/*", "application/pdf")) },
+                    onAdd = viewModel::addVehicle,
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
+
+                SectionTitle("Staff access")
+                Text(
+                    "For RideVibe admins and partner operators: bookings support, trips, services and manifests.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onOpenStaffConsole,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(24.dp),
+                ) {
+                    Text("Staff sign-in", fontWeight = FontWeight.Bold)
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
+
+                SectionTitle("Account")
+                OutlinedButton(
+                    onClick = sessionViewModel::signOut,
+                    enabled = !sessionState.isBusy,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(24.dp),
+                ) {
+                    Text("Sign out", fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                TextButton(
+                    onClick = { showDeleteDialog = true },
+                    enabled = !sessionState.isBusy,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                ) {
                     Text(
-                        uiState.profile.fullName.ifBlank { "Set up your profile" },
-                        style = MaterialTheme.typography.titleMedium,
+                        if (sessionState.isBusy) "Deleting…" else "Delete account",
+                        color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold,
                     )
-                    Text(
-                        "Accurate details speed up boarding verification",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+            }
+        }
+    }
+}
+
+/** Initials avatar, name and email; a Guest chip with a sign-in call to action for the guest path. */
+@Composable
+private fun IdentityHeader(session: PassengerSession?, profileName: String, onSignIn: () -> Unit) {
+    val isGuest = session == null || session.isGuest
+    val name = session?.displayName?.takeIf { it.isNotBlank() } ?: profileName
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 12.dp)) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isGuest) {
+                Icon(Icons.Filled.Person, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            } else {
+                // No image loader in the app yet, so the photo URL is not shown; initials stand in.
+                Text(
+                    session?.initials ?: "?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+        }
+        Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
+            Text(
+                name.ifBlank { "Set up your profile" },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            val subtitle = session?.email?.takeIf { !isGuest && it.isNotBlank() }
+                ?: "Accurate details speed up boarding verification"
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (isGuest) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AssistChip(onClick = onSignIn, label = { Text("Guest") })
+                    TextButton(onClick = onSignIn) { Text("Sign in", fontWeight = FontWeight.Bold) }
                 }
             }
-
-            SectionTitle("Customer data")
-            ProfileField("First name", uiState.profile.firstName) { value ->
-                viewModel.onProfileFieldChanged { it.copy(firstName = value) }
-            }
-            ProfileField("Last name", uiState.profile.lastName) { value ->
-                viewModel.onProfileFieldChanged { it.copy(lastName = value) }
-            }
-            ProfileField("Email", uiState.profile.email) { value ->
-                viewModel.onProfileFieldChanged { it.copy(email = value) }
-            }
-            BirthdateField(
-                isoDate = uiState.profile.birthDate,
-                onClick = { showBirthdateSheet = true },
-            )
-            PhoneField(
-                value = uiState.profile.mobileNumber,
-                fromContacts = uiState.phoneFromContacts,
-                onValueChange = viewModel::onPhoneEdited,
-            )
-            ProfileField("Address", uiState.profile.address) { value ->
-                viewModel.onProfileFieldChanged { it.copy(address = value) }
-            }
-
-            SectionTitle("Emergency contact")
-            ProfileField("Contact name", uiState.profile.emergencyContactName) { value ->
-                viewModel.onProfileFieldChanged { it.copy(emergencyContactName = value) }
-            }
-            ProfileField("Contact number", uiState.profile.emergencyContactNumber) { value ->
-                viewModel.onProfileFieldChanged { it.copy(emergencyContactNumber = value) }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = viewModel::saveProfile,
-                enabled = uiState.canSaveProfile,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(26.dp),
-            ) {
-                Text(if (uiState.isSaving) "Saving…" else "Save Profile", fontWeight = FontWeight.Bold)
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
-
-            SectionTitle("My vehicles")
-            Text(
-                "Register a vehicle now to be ready for Roll-on/Roll-off (RORO) ferry bookings when they launch.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            uiState.vehicles.forEach { vehicle ->
-                VehicleCard(vehicle = vehicle, onRemove = { viewModel.removeVehicle(vehicle.id) })
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
-            AddVehicleCard(
-                plateNumber = uiState.newPlateNumber,
-                certificateAttached = uiState.newCertificateUri != null,
-                canAdd = uiState.canAddVehicle,
-                error = uiState.vehicleError,
-                onPlateChanged = viewModel::onNewPlateNumberChanged,
-                onPickCertificate = { certificatePicker.launch("image/*") },
-                onAdd = viewModel::addVehicle,
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
-
-            SectionTitle("Staff access")
-            Text(
-                "For RideVibe admins and partner operators: bookings support, trips, services and manifests.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onOpenStaffConsole,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(24.dp),
-            ) {
-                Text("Open staff console", fontWeight = FontWeight.Bold)
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
@@ -289,17 +393,26 @@ private fun SectionTitle(text: String) {
         text,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(top = 12.dp, bottom = 10.dp),
+        modifier = Modifier
+            .padding(top = 12.dp, bottom = 10.dp)
+            .semantics { heading() },
     )
 }
 
 @Composable
-private fun ProfileField(label: String, value: String, onValueChange: (String) -> Unit) {
+private fun ProfileField(
+    label: String,
+    value: String,
+    error: String? = null,
+    onValueChange: (String) -> Unit,
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
         singleLine = true,
+        isError = error != null,
+        supportingText = error?.let { { Text(it) } },
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
     )
@@ -307,14 +420,17 @@ private fun ProfileField(label: String, value: String, onValueChange: (String) -
 
 /** Read-only field that opens the birthdate bottom sheet. */
 @Composable
-private fun BirthdateField(isoDate: String, onClick: () -> Unit) {
+private fun BirthdateField(isoDate: String, error: String?, onClick: () -> Unit) {
+    val formatted = formatBirthdate(isoDate)
     Box(modifier = Modifier.padding(bottom = 10.dp)) {
         OutlinedTextField(
-            value = formatBirthdate(isoDate),
+            value = formatted,
             onValueChange = {},
             readOnly = true,
             enabled = false,
             label = { Text("Birthdate") },
+            isError = error != null,
+            supportingText = error?.let { { Text(it) } },
             trailingIcon = {
                 Icon(
                     Icons.Filled.CalendarMonth,
@@ -325,7 +441,7 @@ private fun BirthdateField(isoDate: String, onClick: () -> Unit) {
             singleLine = true,
             shape = RoundedCornerShape(14.dp),
             // Disabled state keeps the click on the wrapper; restore enabled colors.
-            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+            colors = OutlinedTextFieldDefaults.colors(
                 disabledTextColor = MaterialTheme.colorScheme.onSurface,
                 disabledBorderColor = MaterialTheme.colorScheme.outline,
                 disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -333,10 +449,12 @@ private fun BirthdateField(isoDate: String, onClick: () -> Unit) {
             ),
             modifier = Modifier.fillMaxWidth(),
         )
+        // The overlay is what TalkBack lands on, so it announces the field and its value.
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .clickable(onClick = onClick),
+                .semantics { contentDescription = "Birthdate, ${formatted.ifBlank { "not set" }}" }
+                .clickable(onClick = onClick, role = Role.Button, onClickLabel = "Change birthdate"),
         )
     }
 }
@@ -345,43 +463,46 @@ private fun BirthdateField(isoDate: String, onClick: () -> Unit) {
 private fun PhoneField(
     value: String,
     fromContacts: Boolean,
+    error: String?,
     onValueChange: (String) -> Unit,
+    onPickFromContacts: () -> Unit,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text("Phone") },
+        placeholder = { Text("09XXXXXXXXX") },
         singleLine = true,
+        isError = error != null,
+        supportingText = error?.let { { Text(it) } },
         shape = RoundedCornerShape(14.dp),
-        trailingIcon = if (fromContacts) {
-            {
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.padding(end = 10.dp),
-                ) {
-                    Text(
-                        "FROM CONTACTS",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        trailingIcon = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (fromContacts) {
+                    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surfaceVariant) {
+                        Text(
+                            "FROM CONTACTS",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                IconButton(onClick = onPickFromContacts) {
+                    Icon(
+                        Icons.Filled.Contacts,
+                        contentDescription = "Pick phone number from contacts",
+                        tint = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
-        } else {
-            null
         },
         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
     )
 }
 
 // ── Birthdate bottom sheet ───────────────────────────────────────────────────
-
-private val MONTH_NAMES = listOf(
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
-)
 
 /**
  * Modal date picker per the redesign (page 5): year/month/day selectors on top
@@ -395,9 +516,17 @@ private fun BirthdatePickerSheet(
     onSet: (isoDate: String) -> Unit,
 ) {
     val initial = remember(initialIsoDate) { parseIsoDate(initialIsoDate) }
-    var year by remember { mutableStateOf(initial.first) }
-    var month by remember { mutableStateOf(initial.second) } // 0-based
-    var day by remember { mutableStateOf(initial.third) }
+    var year by rememberSaveable { mutableIntStateOf(initial.first) }
+    var month by rememberSaveable { mutableIntStateOf(initial.second) } // 0-based
+    var day by rememberSaveable { mutableIntStateOf(initial.third) }
+
+    // Localised names from the platform, not a hard-coded English list.
+    val symbols = remember { DateFormatSymbols.getInstance(Locale.getDefault()) }
+    val monthNames = remember(symbols) { symbols.months.take(12) }
+    val weekdayInitials = remember(symbols) {
+        // shortWeekdays is 1-based (Calendar.SUNDAY..SATURDAY); index 0 is unused.
+        (Calendar.SUNDAY..Calendar.SATURDAY).map { symbols.shortWeekdays[it].take(1).uppercase(Locale.getDefault()) }
+    }
 
     val daysInMonth = remember(year, month) {
         Calendar.getInstance().apply {
@@ -405,8 +534,10 @@ private fun BirthdatePickerSheet(
             set(year, month, 1)
         }.getActualMaximum(Calendar.DAY_OF_MONTH)
     }
-    if (day > daysInMonth) day = daysInMonth
-    // Day-of-week offset of the 1st (0 = Sunday) so the grid aligns to S M T W T F S.
+    // Switching from the 31st of one month to a shorter month: clamp for display
+    // and for SET, without writing state during composition.
+    val selectedDay = day.coerceAtMost(daysInMonth)
+    // Day-of-week offset of the 1st (0 = Sunday) so the grid aligns to the weekday header.
     val firstDayOffset = remember(year, month) {
         Calendar.getInstance().apply {
             clear()
@@ -433,9 +564,9 @@ private fun BirthdatePickerSheet(
                 )
                 SelectorTile(
                     caption = "MONTH",
-                    value = MONTH_NAMES[month],
-                    options = MONTH_NAMES,
-                    onSelected = { month = MONTH_NAMES.indexOf(it) },
+                    value = monthNames[month],
+                    options = monthNames,
+                    onSelected = { month = monthNames.indexOf(it) },
                     modifier = Modifier.weight(1.2f),
                 )
                 // Day tile is the highlighted selector; the grid below picks it.
@@ -451,7 +582,7 @@ private fun BirthdatePickerSheet(
                             color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
                         )
                         Text(
-                            "$day",
+                            "$selectedDay",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary,
@@ -463,7 +594,7 @@ private fun BirthdatePickerSheet(
             Spacer(modifier = Modifier.height(14.dp))
 
             Row(modifier = Modifier.fillMaxWidth()) {
-                listOf("S", "M", "T", "W", "T", "F", "S").forEach { label ->
+                weekdayInitials.forEach { label ->
                     Text(
                         label,
                         style = MaterialTheme.typography.labelMedium,
@@ -483,13 +614,15 @@ private fun BirthdatePickerSheet(
                         val dayNumber = rowIndex * 7 + columnIndex - firstDayOffset + 1
                         Box(modifier = Modifier.weight(1f).padding(2.dp), contentAlignment = Alignment.Center) {
                             if (dayNumber in 1..daysInMonth) {
-                                val selected = dayNumber == day
+                                val selected = dayNumber == selectedDay
+                                // Clickable Surface pads its touch target to 48dp around the 38dp disc.
                                 Surface(
+                                    onClick = { day = dayNumber },
                                     shape = CircleShape,
-                                    color = if (selected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent,
+                                    color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
                                     modifier = Modifier
                                         .size(38.dp)
-                                        .clickable { day = dayNumber },
+                                        .semantics { contentDescription = "${monthNames[month]} $dayNumber" },
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Text(
@@ -519,7 +652,7 @@ private fun BirthdatePickerSheet(
                     Text("CANCEL", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.size(4.dp))
-                TextButton(onClick = { onSet("%04d-%02d-%02d".format(year, month + 1, day)) }) {
+                TextButton(onClick = { onSet("%04d-%02d-%02d".format(year, month + 1, selectedDay)) }) {
                     Text("SET", fontWeight = FontWeight.Bold)
                 }
             }
@@ -536,12 +669,15 @@ private fun SelectorTile(
     onSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     Box(modifier = modifier) {
         Surface(
+            onClick = { expanded = true },
             shape = RoundedCornerShape(14.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.fillMaxWidth().clickable { expanded = true },
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = "$caption $value" },
         ) {
             Row(
                 modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
@@ -562,7 +698,7 @@ private fun SelectorTile(
                 }
                 Icon(
                     Icons.Filled.ArrowDropDown,
-                    contentDescription = "Change $caption",
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -600,34 +736,51 @@ private fun formatBirthdate(iso: String): String {
     return SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(calendar.time)
 }
 
+// ── Contacts picker (no READ_CONTACTS) ───────────────────────────────────────
+
 /**
- * Phone number from the device owner's contact card ("Me" profile), or null if
- * the card is empty. Requires READ_CONTACTS, which covers the profile directory.
+ * ACTION_PICK on the phone-number table: the picker returns one data row with
+ * a temporary read grant, which is why this needs no contacts permission.
+ * (PickContact would return a contact URI whose grant does not cover the
+ * phone table.)
  */
-private fun readProfilePhoneNumber(context: Context): String? {
-    val uri = ContactsContract.Profile.CONTENT_URI.buildUpon()
-        .appendPath(ContactsContract.Contacts.Data.CONTENT_DIRECTORY)
-        .build()
-    return runCatching {
+private class PickPhoneNumber : ActivityResultContract<Unit, Uri?>() {
+    override fun createIntent(context: Context, input: Unit): Intent =
+        Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI)
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
+        intent?.data?.takeIf { resultCode == Activity.RESULT_OK }
+}
+
+private fun readPickedPhoneNumber(context: Context, uri: Uri): String? = runCatching {
+    context.contentResolver.query(uri, arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null)
+        ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+}.getOrNull()?.takeIf { it.isNotBlank() }
+
+// ── Picked document metadata ─────────────────────────────────────────────────
+
+private data class DocumentInfo(val displayName: String?, val mimeType: String?, val sizeBytes: Long?)
+
+/** Name, type and size of a picked document, from the provider; nulls where the provider withholds them. */
+private fun readDocumentInfo(context: Context, uri: Uri): DocumentInfo {
+    val mimeType = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+    var displayName: String? = null
+    var sizeBytes: Long? = null
+    runCatching {
         context.contentResolver.query(
             uri,
-            arrayOf(
-                ContactsContract.CommonDataKinds.Phone.NUMBER,
-                ContactsContract.Contacts.Data.MIMETYPE,
-            ),
+            arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
             null,
             null,
             null,
         )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                if (cursor.getString(1) == ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE) {
-                    val number = cursor.getString(0)
-                    if (!number.isNullOrBlank()) return@use number
-                }
+            if (cursor.moveToFirst()) {
+                displayName = cursor.getString(0)
+                sizeBytes = if (cursor.isNull(1)) null else cursor.getLong(1)
             }
-            null
         }
-    }.getOrNull()
+    }
+    return DocumentInfo(displayName, mimeType, sizeBytes)
 }
 
 @Composable
@@ -661,7 +814,7 @@ private fun VehicleCard(vehicle: Vehicle, onRemove: () -> Unit) {
             IconButton(onClick = onRemove) {
                 Icon(
                     Icons.Filled.Delete,
-                    contentDescription = "Remove vehicle",
+                    contentDescription = "Remove vehicle ${vehicle.plateNumber}",
                     tint = MaterialTheme.colorScheme.error,
                 )
             }
@@ -672,7 +825,7 @@ private fun VehicleCard(vehicle: Vehicle, onRemove: () -> Unit) {
 @Composable
 private fun AddVehicleCard(
     plateNumber: String,
-    certificateAttached: Boolean,
+    certificateName: String?,
     canAdd: Boolean,
     error: String?,
     onPlateChanged: (String) -> Unit,
@@ -699,6 +852,7 @@ private fun AddVehicleCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            val certificateAttached = certificateName != null
             OutlinedButton(
                 onClick = onPickCertificate,
                 modifier = Modifier.fillMaxWidth(),
@@ -711,10 +865,17 @@ private fun AddVehicleCard(
                 )
                 Spacer(modifier = Modifier.size(8.dp))
                 Text(
-                    if (certificateAttached) "LTO Certificate attached ✓" else "Upload LTO Certificate of Registration",
+                    if (certificateAttached) "Attached: $certificateName" else "Upload LTO Certificate of Registration",
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
                 )
             }
+            Text(
+                "Photo, scan or PDF, up to 10 MB.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+            )
 
             error?.let {
                 Spacer(modifier = Modifier.height(8.dp))

@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +28,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.ridevibe.core.domain.model.BookingStatus
 import com.ridevibe.core.domain.model.RefundStatus
 import com.ridevibe.core.domain.model.SupportBooking
+import com.ridevibe.core.domain.model.displayLabel
 import com.ridevibe.feature.admin.ui.components.ButtonSpinner
 import com.ridevibe.feature.admin.ui.components.CodeText
 import com.ridevibe.feature.admin.ui.components.ConfirmDialog
@@ -54,11 +56,14 @@ import com.ridevibe.feature.admin.ui.components.StatusPills
 import com.ridevibe.feature.admin.ui.components.rememberStaffQrBitmap
 import com.ridevibe.feature.admin.ui.formatPhDateTime
 import com.ridevibe.feature.admin.ui.formatPhp
+import com.ridevibe.feature.admin.ui.humanize
 import com.ridevibe.feature.admin.ui.shortId
 
 /**
  * Full booking record for the support console with every field, the QR
- * rendered from `qrPayload`, and the three staff actions.
+ * rendered from `qrPayload`, and the three staff actions. Dialog and note
+ * state survive rotation (rememberSaveable) so a half-written refund note is
+ * not lost to a config change mid-call.
  */
 @Composable
 fun AdminBookingDetail(
@@ -69,12 +74,13 @@ fun AdminBookingDetail(
     onRefund: (RefundStatus, note: String) -> Unit,
     onReissueQr: () -> Unit,
 ) {
-    var showCancelDialog by remember(booking.id) { mutableStateOf(false) }
-    var showReissueDialog by remember(booking.id) { mutableStateOf(false) }
-    var refundChoice by remember(booking.id, booking.refundStatus) {
+    var showCancelDialog by rememberSaveable(booking.id) { mutableStateOf(false) }
+    var showReissueDialog by rememberSaveable(booking.id) { mutableStateOf(false) }
+    var showRefundConfirm by rememberSaveable(booking.id) { mutableStateOf(false) }
+    var refundChoice by rememberSaveable(booking.id, booking.refundStatus) {
         mutableStateOf(if (booking.refundStatus == RefundStatus.NONE) RefundStatus.REQUESTED else booking.refundStatus)
     }
-    var refundNote by remember(booking.id, booking.refundNote) { mutableStateOf(booking.refundNote.orEmpty()) }
+    var refundNote by rememberSaveable(booking.id, booking.refundNote) { mutableStateOf(booking.refundNote.orEmpty()) }
 
     // Header
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
@@ -82,7 +88,7 @@ fun AdminBookingDetail(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(booking.passengerFullName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.width(8.dp))
-                Pill(booking.passengerType.name, PillTone.PLAIN)
+                Pill(humanize(booking.passengerType.name), PillTone.PLAIN)
             }
             Spacer(modifier = Modifier.height(4.dp))
             CodeText(booking.id)
@@ -96,7 +102,7 @@ fun AdminBookingDetail(
     LabeledValue("Trip") {
         Text("${booking.origin} → ${booking.destination}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
         Text(
-            "${booking.operatorName} · ${booking.busClass.name} · ${booking.rideKind.name}",
+            "${booking.operatorName} · ${booking.busClass.displayLabel(booking.rideKind)} · ${humanize(booking.rideKind.name)}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -120,7 +126,7 @@ fun AdminBookingDetail(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
                     Text("${passenger.firstName} ${passenger.lastName}".trim(), style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Pill(passenger.type.name, PillTone.PLAIN)
+                    Pill(humanize(passenger.type.name), PillTone.PLAIN)
                     passenger.mobileNumber?.let {
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -130,17 +136,23 @@ fun AdminBookingDetail(
         }
     }
     LabeledValue("QR ticket") {
+        val qr by rememberStaffQrBitmap(booking.qrPayload)
         Box(
             modifier = Modifier
                 .padding(vertical = 6.dp)
                 .background(Color.White, RoundedCornerShape(12.dp))
                 .padding(10.dp),
         ) {
-            Image(
-                bitmap = rememberStaffQrBitmap(booking.qrPayload),
-                contentDescription = "Boarding QR for ${shortId(booking.id)}",
-                modifier = Modifier.size(180.dp),
-            )
+            val bitmap = qr
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = "Boarding QR for ${shortId(booking.id)}",
+                    modifier = Modifier.size(180.dp),
+                )
+            } else {
+                Box(modifier = Modifier.size(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            }
         }
         CodeText(booking.qrPayload, modifier = Modifier.fillMaxWidth())
     }
@@ -204,7 +216,7 @@ fun AdminBookingDetail(
     )
     Spacer(modifier = Modifier.height(8.dp))
     OutlinedButton(
-        onClick = { onRefund(refundChoice, refundNote) },
+        onClick = { showRefundConfirm = true },
         enabled = !isActing,
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -229,6 +241,20 @@ fun AdminBookingDetail(
             onDismiss = { showCancelDialog = false },
         )
     }
+    if (showRefundConfirm) {
+        ConfirmDialog(
+            title = "Apply refund status?",
+            text = "Set the refund status of ${shortId(booking.id)} to ${refundChoice.name}" +
+                (refundNote.takeIf { it.isNotBlank() }?.let { " with the note \"$it\"" } ?: "") +
+                "? This is bookkeeping only — no money moves.",
+            confirmLabel = "Apply",
+            onConfirm = {
+                showRefundConfirm = false
+                onRefund(refundChoice, refundNote)
+            },
+            onDismiss = { showRefundConfirm = false },
+        )
+    }
     if (showReissueDialog) {
         ConfirmDialog(
             title = "Reissue QR ticket?",
@@ -250,7 +276,8 @@ private fun CancelBookingDialog(
     onConfirm: (reason: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var reason by remember { mutableStateOf("") }
+    var reason by rememberSaveable { mutableStateOf("") }
+    var touched by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Cancel booking", fontWeight = FontWeight.Bold) },
@@ -263,10 +290,14 @@ private fun CancelBookingDialog(
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = reason,
-                    onValueChange = { reason = it },
+                    onValueChange = {
+                        reason = it
+                        touched = true
+                    },
                     label = { Text("Cancellation reason") },
                     placeholder = { Text("required to cancel") },
-                    isError = reason.isBlank(),
+                    // Only complain once the person has typed and then cleared it — not on first open.
+                    isError = touched && reason.isBlank(),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

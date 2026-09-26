@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -26,8 +27,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ridevibe.core.domain.model.AllocatedSeat
 import com.ridevibe.core.domain.model.SeatStatus
@@ -45,6 +51,11 @@ import com.ridevibe.feature.admin.ui.shortId
  *   picked     -> primaryContainer + primary border (partner on-site sale)
  */
 
+private val AISLE_WIDTH = 20.dp
+private val CELL_GAP = 8.dp
+private val MIN_CELL_WIDTH = 36.dp
+private val MAX_CELL_WIDTH = 64.dp
+
 @Composable
 private fun seatColors(status: SeatStatus, picked: Boolean): Pair<Color, Color> = when {
     picked -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
@@ -54,10 +65,21 @@ private fun seatColors(status: SeatStatus, picked: Boolean): Pair<Color, Color> 
     else -> MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.onPrimary
 }
 
+/** What a screen reader says for a seat's state — the legend in words. */
+private fun seatStateDescription(status: SeatStatus, picked: Boolean): String = when {
+    picked -> "Selected for on-site sale"
+    status == SeatStatus.AVAILABLE -> "Available"
+    status == SeatStatus.LOCKED -> "Held, being selected now"
+    status == SeatStatus.OCCUPIED -> "Sold"
+    else -> "Selected"
+}
+
 /**
  * Cabin grid: rows sorted, columns 1–2 left of the aisle and 3+ right of it
  * (2×2 ordinary/deluxe, 2×1 luxury). Every seat is tappable so staff can
  * inspect it; [pickedLabels] highlights seats chosen for an on-site sale.
+ * Cell width follows the available width so a 2×2 bus fits a narrow phone
+ * and does not look lost on a tablet.
  */
 @Composable
 fun StaffSeatGrid(
@@ -71,39 +93,45 @@ fun StaffSeatGrid(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         modifier = modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surface) {
+        BoxWithConstraints(modifier = Modifier.padding(14.dp)) {
+            val columns = (seats.maxOfOrNull { it.column } ?: 4).coerceAtLeast(2)
+            val cellWidth: Dp = ((maxWidth - AISLE_WIDTH - CELL_GAP * (columns - 1)) / columns)
+                .coerceIn(MIN_CELL_WIDTH, MAX_CELL_WIDTH)
+            val cellHeight = cellWidth * 5 / 6
+            Column {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surface) {
+                        Text(
+                            "DRIVER",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        )
+                    }
                     Text(
-                        "DRIVER",
+                        "Entrance",
                         style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.CenterVertically),
                     )
                 }
-                Text(
-                    "Entrance",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.CenterVertically),
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-            seats.groupBy { it.row }.toSortedMap().forEach { (_, rowSeats) ->
-                val byColumn = rowSeats.sortedBy { it.column }
-                val left = byColumn.filter { it.column <= 2 }
-                val right = byColumn.filter { it.column >= 3 }
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        left.forEach { StaffSeatCell(it, it.label in pickedLabels, onSeatClick) }
-                    }
-                    Spacer(modifier = Modifier.width(20.dp)) // aisle
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        right.forEach { StaffSeatCell(it, it.label in pickedLabels, onSeatClick) }
+                seats.groupBy { it.row }.toSortedMap().forEach { (_, rowSeats) ->
+                    val byColumn = rowSeats.sortedBy { it.column }
+                    val left = byColumn.filter { it.column <= 2 }
+                    val right = byColumn.filter { it.column >= 3 }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(CELL_GAP)) {
+                            left.forEach { StaffSeatCell(it, it.label in pickedLabels, cellWidth, cellHeight, onSeatClick) }
+                        }
+                        Spacer(modifier = Modifier.width(AISLE_WIDTH)) // aisle
+                        Row(horizontalArrangement = Arrangement.spacedBy(CELL_GAP)) {
+                            right.forEach { StaffSeatCell(it, it.label in pickedLabels, cellWidth, cellHeight, onSeatClick) }
+                        }
                     }
                 }
             }
@@ -112,19 +140,36 @@ fun StaffSeatGrid(
 }
 
 @Composable
-private fun StaffSeatCell(seat: AllocatedSeat, picked: Boolean, onClick: ((AllocatedSeat) -> Unit)?) {
+private fun StaffSeatCell(
+    seat: AllocatedSeat,
+    picked: Boolean,
+    width: Dp,
+    height: Dp,
+    onClick: ((AllocatedSeat) -> Unit)?,
+) {
     val (background, content) = seatColors(seat.status, picked)
     val borderColor = when {
         picked -> MaterialTheme.colorScheme.primary
         seat.status == SeatStatus.AVAILABLE -> MaterialTheme.colorScheme.outline
         else -> Color.Transparent
     }
+    val state = seatStateDescription(seat.status, picked)
     Box(
         modifier = Modifier
-            .size(width = 48.dp, height = 40.dp)
+            .size(width = width, height = height)
             .background(background, RoundedCornerShape(10.dp))
             .border(if (picked) 2.dp else 1.dp, borderColor, RoundedCornerShape(10.dp))
-            .then(if (onClick != null) Modifier.clickable { onClick(seat) } else Modifier),
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(role = Role.Button, onClick = { onClick(seat) })
+                } else {
+                    Modifier
+                },
+            )
+            .semantics {
+                contentDescription = "Seat ${seat.label}"
+                stateDescription = state
+            },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -144,7 +189,7 @@ fun StaffSeatLegend(modifier: Modifier = Modifier, pickable: Boolean = false, pa
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().semantics { contentDescription = "Seat colour legend" },
     ) {
         LegendEntry(
             if (pickable) "Available (tap to select for on-site sale)" else "Available",
@@ -164,7 +209,7 @@ fun StaffSeatLegend(modifier: Modifier = Modifier, pickable: Boolean = false, pa
 
 @Composable
 private fun LegendEntry(label: String, color: Color, bordered: Boolean = false) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics { contentDescription = label }) {
         LegendSwatch(color, bordered)
         Text(
             label,

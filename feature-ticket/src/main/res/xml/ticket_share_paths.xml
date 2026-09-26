@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the rendered ticket PNGs are shareable; nothing else in cacheDir is reachable. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path
+        name="shared_tickets"
+        path="shared-tickets/" />
+</paths>

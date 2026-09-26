@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release: HTTPS only. The CRS never speaks plain HTTP outside a developer's
+     LAN, so cleartext is refused for every host; a network security config
+     overrides android:usesCleartextTraffic wherever both are present. The
+     debug source set ships its own copy of this file that re-enables cleartext
+     for local backends. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

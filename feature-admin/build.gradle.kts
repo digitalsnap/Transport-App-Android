@@ -17,7 +17,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
+        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
 
     compileOptions {
@@ -38,15 +38,23 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.compose.ui.tooling)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.coroutines.android)
 
     // QR rendering for the support console (same pattern as feature-ticket).
     implementation(libs.zxing.core)
+    // QR scanning for the partner manifest check-in.
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
+    implementation(libs.mlkit.barcode.scanning)
 
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)

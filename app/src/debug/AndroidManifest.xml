@@ -5,6 +5,10 @@
          machine as seen from the emulator, or a LAN IP for a physical device.
          Android 9+ blocks cleartext by default, so debug needs this opt-in.
 
+         The effective switch is the debug copy of res/xml/network_security_config.xml
+         (a network security config overrides this attribute); the attribute is
+         kept so the intent is visible in the merged manifest.
+
          Debug source set ONLY. Release builds stay HTTPS-only: this never
          merges into the APK your testers install. -->
     <application android:usesCleartextTraffic="true" />

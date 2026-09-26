@@ -16,14 +16,24 @@ data class StaffSession(
     val role: StaffRole,
     val operatorId: Int? = null,
     val operatorName: String? = null,
+    /**
+     * When the server will stop honouring [token] (sign-in time + `expiresInDays`).
+     * Null when the server did not say; the store then defers to `/auth/me`.
+     */
+    val expiresAtEpochMillis: Long? = null,
 ) {
     val isAdmin: Boolean get() = role == StaffRole.ADMIN
+
+    fun isExpired(nowEpochMillis: Long = System.currentTimeMillis()): Boolean =
+        expiresAtEpochMillis?.let { it <= nowEpochMillis } ?: false
 }
 
 /** What the sign-in screen may offer (`GET /auth/config`). */
 data class StaffAuthOptions(
     val googleEnabled: Boolean,
     val emailKeyEnabled: Boolean,
+    /** Web-client audience for the Google ID token; null when Google sign-in is off. */
+    val googleClientId: String? = null,
 )
 
 /** `POST /auth/email-code` result. [devCode] is only ever present outside production. */
@@ -104,8 +114,6 @@ data class PartnerTokenIssued(
     val token: String,
     val note: String,
 )
-
-enum class BookingStatus { CONFIRMED, CANCELLED }
 
 enum class RefundStatus { NONE, REQUESTED, REFUNDED }
 

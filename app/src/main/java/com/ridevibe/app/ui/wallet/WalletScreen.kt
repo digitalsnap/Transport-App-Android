@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -27,42 +28,20 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ridevibe.app.ui.theme.charcoalTopBarColors
-import com.ridevibe.core.domain.model.Wallet
-import com.ridevibe.core.domain.repository.WalletRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import javax.inject.Inject
-
-// WalletRepository is injected directly (no use-case layer): a single read
-// with no domain logic. Screen + VM share a file until the feature grows.
-@HiltViewModel
-class WalletViewModel @Inject constructor(
-    walletRepository: WalletRepository,
-) : ViewModel() {
-
-    private val _wallet = MutableStateFlow<Wallet?>(null)
-    val wallet: StateFlow<Wallet?> = _wallet.asStateFlow()
-
-    init {
-        viewModelScope.launch { _wallet.value = walletRepository.getWallet() }
-    }
-}
+import com.ridevibe.core.domain.format.PhTime
+import com.ridevibe.core.domain.format.formatPhp
+import kotlin.math.abs
 
 /** RideVibe credits balance + payment history (payments recorded per booking). */
 @Composable
@@ -71,7 +50,7 @@ fun WalletScreen(
     onProfileClick: () -> Unit,
     viewModel: WalletViewModel = hiltViewModel(),
 ) {
-    val wallet by viewModel.wallet.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -92,95 +71,108 @@ fun WalletScreen(
             )
         },
     ) { padding ->
-        val current = wallet
-        if (current == null) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            return@Scaffold
-        }
+        val wallet = uiState.wallet
+        when {
+            uiState.isLoading -> Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                Card(
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
-                        Text(
-                            "RIDEVIBE CREDITS",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            "₱%,.2f".format(current.balancePhp),
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Top-up and pay-with-credits arrive with the payments integration.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
-                        )
+            uiState.error != null || wallet == null -> Column(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    uiState.error ?: "Could not load your wallet",
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(onClick = viewModel::load) { Text("Retry", fontWeight = FontWeight.Bold) }
+            }
+
+            else -> LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+                            Text(
+                                "RIDEVIBE CREDITS",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                formatPhp(wallet.balancePhp),
+                                style = MaterialTheme.typography.displaySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            // Read-only for now: the wallet backend has no top-up or pay-with-credits contract yet.
+                            Text(
+                                "Top-up and pay-with-credits arrive with the payments integration.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+                            )
+                        }
                     }
                 }
-            }
 
-            item {
-                Text(
-                    "Activity",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-
-            if (current.transactions.isEmpty()) {
                 item {
                     Text(
-                        "No activity yet.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        "Activity",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .semantics { heading() },
                     )
                 }
-            } else {
-                items(current.transactions, key = { it.id }) { transaction ->
-                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(14.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.padding(end = 12.dp)) {
+
+                if (wallet.transactions.isEmpty()) {
+                    item {
+                        Text(
+                            "No activity yet.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    items(wallet.transactions, key = { it.id }) { transaction ->
+                        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                    Text(
+                                        transaction.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    Text(
+                                        PhTime.formatDateTime(transaction.timestampEpochMillis, "MMM d, yyyy • h:mm a"),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                val credit = transaction.amountPhp >= 0
                                 Text(
-                                    transaction.title,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                Text(
-                                    formatDate(transaction.timestampEpochMillis),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    (if (credit) "+" else "−") + formatPhp(abs(transaction.amountPhp)),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (credit) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 )
                             }
-                            Text(
-                                (if (transaction.amountPhp >= 0) "+" else "−") +
-                                    "₱%,.2f".format(kotlin.math.abs(transaction.amountPhp)),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (transaction.amountPhp >= 0) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                            )
                         }
                     }
                 }
@@ -188,6 +180,3 @@ fun WalletScreen(
         }
     }
 }
-
-private fun formatDate(epochMillis: Long): String =
-    SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.getDefault()).format(Date(epochMillis))

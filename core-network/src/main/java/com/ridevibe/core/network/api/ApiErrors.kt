@@ -14,7 +14,23 @@ import java.io.IOException
  * Extends IOException so existing `catch (e: IOException)` paths keep working;
  * the mock repositories throw it directly to mirror server refusals.
  */
-class CrsApiException(val code: Int, override val message: String) : IOException(message)
+class CrsApiException(val code: Int, override val message: String) : IOException(message) {
+    /** No connection at all (DNS, timeout, airplane mode) — as opposed to a server refusal. */
+    val isOffline: Boolean get() = code == OFFLINE_CODE
+
+    companion object {
+        const val OFFLINE_CODE = 0
+        const val OFFLINE_MESSAGE = "No connection to the CRS"
+
+        /**
+         * A 401 on the passenger surface means the server no longer recognises
+         * the device id it was sent (see DeviceIdProvider) — not that a sign-in
+         * is required, which is what the staff fallback would wrongly say.
+         */
+        const val DEVICE_SESSION_REJECTED_MESSAGE =
+            "Your session on this device was not recognised. Restart the app to sign in again."
+    }
+}
 
 /**
  * Runs [block]; converts retrofit2.HttpException into CrsApiException using the
@@ -32,10 +48,25 @@ suspend fun <T> apiResult(block: suspend () -> T): Result<T> = try {
 } catch (e: HttpException) {
     Result.failure(e.toCrsApiException())
 } catch (e: IOException) {
-    Result.failure(CrsApiException(0, "No connection to the CRS"))
+    Result.failure(CrsApiException(CrsApiException.OFFLINE_CODE, CrsApiException.OFFLINE_MESSAGE))
 } catch (e: Exception) {
     // Malformed body etc. — surface as a failed Result rather than crashing a staff view.
     Result.failure(e)
+}
+
+/**
+ * [apiResult] for the `/v1` passenger surface: identical, except a 401 is
+ * reworded for a rider (there is no sign-in to redo — the device id itself
+ * was rejected).
+ */
+suspend fun <T> passengerApiResult(block: suspend () -> T): Result<T> {
+    val result = apiResult(block)
+    val error = result.exceptionOrNull()
+    return if (error is CrsApiException && error.code == 401) {
+        Result.failure(CrsApiException(401, CrsApiException.DEVICE_SESSION_REJECTED_MESSAGE))
+    } else {
+        result
+    }
 }
 
 @Serializable
@@ -48,7 +79,7 @@ private val errorJson = Json {
     coerceInputValues = true
 }
 
-private fun HttpException.toCrsApiException(): CrsApiException {
+internal fun HttpException.toCrsApiException(): CrsApiException {
     val serverMessage = runCatching {
         response()?.errorBody()?.string()
             ?.takeIf { it.isNotBlank() }

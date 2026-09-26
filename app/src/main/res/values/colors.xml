@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand tokens that must exist outside Compose: the launcher icon, the
+         splash window and the pre-Compose window background. Keep in step with
+         the palette in ui/theme/Theme.kt. -->
+    <color name="brand_charcoal">#FF2C363F</color>
+    <color name="brand_vapour">#FFF2F8F7</color>
+    <color name="brand_dark_canvas">#FF1D242B</color>
+    <color name="launcher_background">@color/brand_charcoal</color>
+</resources>

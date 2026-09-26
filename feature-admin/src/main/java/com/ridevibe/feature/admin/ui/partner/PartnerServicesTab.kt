@@ -16,6 +16,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -24,7 +27,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -35,13 +37,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ridevibe.core.domain.model.BusClass
-import com.ridevibe.core.domain.model.NewService
 import com.ridevibe.core.domain.model.OperatorService
 import com.ridevibe.core.domain.model.RideKind
-import com.ridevibe.core.domain.model.ServiceUpdate
+import com.ridevibe.core.domain.model.displayLabel
 import com.ridevibe.feature.admin.ui.components.ButtonSpinner
+import com.ridevibe.feature.admin.ui.components.ConfirmDialog
 import com.ridevibe.feature.admin.ui.components.EmptyText
+import com.ridevibe.feature.admin.ui.components.ErrorWithRetry
 import com.ridevibe.feature.admin.ui.components.HintText
 import com.ridevibe.feature.admin.ui.components.InlineError
 import com.ridevibe.feature.admin.ui.components.LoadingRow
@@ -51,18 +55,20 @@ import com.ridevibe.feature.admin.ui.components.SectionCard
 import com.ridevibe.feature.admin.ui.components.ServiceRow
 import com.ridevibe.feature.admin.ui.components.ToggleChip
 import com.ridevibe.feature.admin.ui.formatHour
+import com.ridevibe.feature.admin.ui.humanize
 import com.ridevibe.feature.admin.viewmodel.PartnerServicesViewModel
 
 /** "My services": the bus types the operator inputs, with create and fare/hours/duration edit. */
 @Composable
 fun PartnerServicesTab(
+    sessionKey: String,
     operatorId: Int?,
     readOnly: Boolean,
     onMessage: (String) -> Unit,
     viewModel: PartnerServicesViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsState()
-    LaunchedEffect(operatorId) { viewModel.start(operatorId) }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(sessionKey, operatorId) { viewModel.start(sessionKey, operatorId) }
     LaunchedEffect(state.message) {
         state.message?.let {
             onMessage(it)
@@ -88,6 +94,12 @@ fun PartnerServicesTab(
                     isSaving = state.isSaving,
                     error = if (state.editing == null) state.formError else null,
                     resetKey = state.createdCount,
+                    locations = state.locations,
+                    isLocationsLoading = state.isLocationsLoading,
+                    locationsError = state.locationsError,
+                    onRetryLocations = viewModel::loadLocations,
+                    capacityFor = { busClass, rideKind -> viewModel.capacityFor(busClass, rideKind) },
+                    isDefaultSeaCapacity = { rideKind -> viewModel.isDefaultSeaCapacity(rideKind) },
                     onCreate = viewModel::createService,
                 )
             }
@@ -96,19 +108,22 @@ fun PartnerServicesTab(
             Spacer(modifier = Modifier.height(4.dp))
             MicroLabel("My services (${state.services.size})")
         }
-        state.error?.let { item { InlineError(it) } }
         when {
             state.isLoading && state.services.isEmpty() -> item { LoadingRow() }
+            state.error != null && state.services.isEmpty() -> item { ErrorWithRetry(state.error!!, onRetry = viewModel::load) }
             state.services.isEmpty() -> item { EmptyText("No services yet — add one above and it becomes searchable in the rider app.") }
-            else -> items(state.services, key = { it.id }) { service ->
-                ServiceRow(
-                    service = service,
-                    trailing = if (readOnly) {
-                        null
-                    } else {
-                        { TextButton(onClick = { viewModel.openEdit(service) }) { Text("Edit fare · hours · duration") } }
-                    },
-                )
+            else -> {
+                state.error?.let { item { InlineError(it) } }
+                items(state.services, key = { it.id }) { service ->
+                    ServiceRow(
+                        service = service,
+                        trailing = if (readOnly) {
+                            null
+                        } else {
+                            { TextButton(onClick = { viewModel.openEdit(service) }) { Text("Edit fare · hours · duration") } }
+                        },
+                    )
+                }
             }
         }
     }
@@ -124,10 +139,22 @@ fun PartnerServicesTab(
                     service = service,
                     isSaving = state.isSaving,
                     error = state.formError,
-                    onSave = viewModel::saveEdit,
+                    onSave = viewModel::requestSaveEdit,
                     onCancel = viewModel::closeEdit,
                 )
             }
+        }
+        state.pendingUpdate?.let {
+            ConfirmDialog(
+                title = "Remove departure hours?",
+                text = "Dropping ${state.pendingRemovedHours.joinToString(", ") { formatHour(it) }} deletes future " +
+                    "${service.origin} → ${service.destination} trips at those hours that have no sales and no live holds. " +
+                    "Departures with sold seats are kept.",
+                confirmLabel = "Save changes",
+                destructive = true,
+                onConfirm = viewModel::confirmPendingEdit,
+                onDismiss = viewModel::cancelPendingEdit,
+            )
         }
     }
 }
@@ -137,7 +164,21 @@ private fun AddServiceCard(
     isSaving: Boolean,
     error: String?,
     resetKey: Int,
-    onCreate: (NewService) -> Unit,
+    locations: List<String>,
+    isLocationsLoading: Boolean,
+    locationsError: String?,
+    onRetryLocations: () -> Unit,
+    capacityFor: (BusClass, RideKind) -> Int,
+    isDefaultSeaCapacity: (RideKind) -> Boolean,
+    onCreate: (
+        origin: String,
+        destination: String,
+        rideKind: RideKind,
+        busClass: BusClass,
+        fareText: String,
+        durationText: String,
+        hours: Set<Int>,
+    ) -> Unit,
 ) {
     var origin by rememberSaveable { mutableStateOf("") }
     var destination by rememberSaveable { mutableStateOf("") }
@@ -146,53 +187,67 @@ private fun AddServiceCard(
     var fare by rememberSaveable { mutableStateOf("") }
     var duration by rememberSaveable { mutableStateOf("") }
     var hours by rememberSaveable { mutableStateOf(setOf<Int>()) }
-    var localError by rememberSaveable { mutableStateOf<String?>(null) }
+    // The create counter this form last reacted to. Restored with the fields after rotation, so a
+    // restored form is not wiped by a create that happened before the config change.
+    var resetSeen by rememberSaveable { mutableStateOf(resetKey) }
 
-    // A successful create clears the form, like the dashboard's form.reset().
     LaunchedEffect(resetKey) {
-        if (resetKey > 0) {
-            origin = ""; destination = ""; fare = ""; duration = ""; hours = emptySet(); localError = null
+        if (resetKey != resetSeen) {
+            resetSeen = resetKey
+            origin = ""; destination = ""; fare = ""; duration = ""; hours = emptySet()
         }
     }
 
     SectionCard("Add a service") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedTextField(
+            LocationPicker(
+                label = "Origin",
                 value = origin,
-                onValueChange = { origin = it },
-                label = { Text("Origin") },
-                singleLine = true,
+                options = locations,
+                enabled = locations.isNotEmpty(),
+                onPick = { origin = it },
                 modifier = Modifier.weight(1f),
             )
-            OutlinedTextField(
+            LocationPicker(
+                label = "Destination",
                 value = destination,
-                onValueChange = { destination = it },
-                label = { Text("Destination") },
-                singleLine = true,
+                options = locations,
+                enabled = locations.isNotEmpty(),
+                onPick = { destination = it },
                 modifier = Modifier.weight(1f),
             )
+        }
+        when {
+            isLocationsLoading -> HintText("Loading terminals…", modifier = Modifier.padding(top = 4.dp))
+            locationsError != null -> Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                InlineError(locationsError, modifier = Modifier.weight(1f))
+                TextButton(onClick = onRetryLocations) { Text("Retry") }
+            }
+            else -> HintText("Pick from RideVibe's terminals and ports — new places are added by RideVibe admins.", modifier = Modifier.padding(top = 4.dp))
         }
         Spacer(modifier = Modifier.height(10.dp))
         MicroLabel("Ride kind")
         Spacer(modifier = Modifier.height(4.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             RideKind.values().forEach { kind ->
-                ToggleChip(kind.name, selected = rideKind == kind, onClick = { rideKind = kind })
+                ToggleChip(humanize(kind.name), selected = rideKind == kind, onClick = { rideKind = kind })
             }
         }
         Spacer(modifier = Modifier.height(10.dp))
-        MicroLabel("Bus type (class)")
+        MicroLabel(if (rideKind == RideKind.BUS) "Bus type (class)" else "Accommodation class")
         Spacer(modifier = Modifier.height(4.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             BusClass.values().forEach { cls ->
-                ToggleChip(cls.name, selected = busClass == cls, onClick = { busClass = cls })
+                ToggleChip(cls.displayLabel(rideKind), selected = busClass == cls, onClick = { busClass = cls })
             }
         }
+        val capacity = capacityFor(busClass, rideKind)
         HintText(
             if (rideKind == RideKind.BUS) {
-                if (busClass == BusClass.LUXURY) "Allocates a 2×1 layout, 30 seats per trip." else "Allocates a 2×2 layout, 44 seats per trip."
+                if (busClass == BusClass.LUXURY) "Allocates a 2×1 layout, $capacity seats per trip." else "Allocates a 2×2 layout, $capacity seats per trip."
             } else {
-                "Open seating (roll-on/roll-off): ${if (busClass == BusClass.LUXURY) 30 else 44} passenger capacity per sailing."
+                "Open seating (roll-on/roll-off): $capacity passenger capacity per sailing" +
+                    if (isDefaultSeaCapacity(rideKind)) " (RideVibe default until the vessel capacity is set)." else "."
             },
             modifier = Modifier.padding(top = 4.dp),
         )
@@ -219,33 +274,10 @@ private fun AddServiceCard(
         MicroLabel("Departure hours (PH)")
         Spacer(modifier = Modifier.height(4.dp))
         HourPicker(selected = hours, onToggle = { hour -> hours = if (hour in hours) hours - hour else hours + hour })
-        InlineError(localError ?: error)
+        InlineError(error)
         Spacer(modifier = Modifier.height(8.dp))
         Button(
-            onClick = {
-                val fareValue = fare.toDoubleOrNull()
-                val durationValue = duration.toIntOrNull()
-                localError = when {
-                    origin.isBlank() || destination.isBlank() -> "Origin and destination are required"
-                    fareValue == null || fareValue <= 0 -> "Enter the fare in PHP"
-                    durationValue == null || durationValue < 15 -> "Duration must be at least 15 minutes"
-                    hours.isEmpty() -> "Pick at least one departure hour"
-                    else -> null
-                }
-                if (localError == null) {
-                    onCreate(
-                        NewService(
-                            origin = origin.trim(),
-                            destination = destination.trim(),
-                            busClass = busClass,
-                            rideKind = rideKind,
-                            farePhp = fareValue!!,
-                            departureHours = hours.sorted(),
-                            durationMinutes = durationValue!!,
-                        ),
-                    )
-                }
-            },
+            onClick = { onCreate(origin, destination, rideKind, busClass, fare, duration, hours) },
             enabled = !isSaving,
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -255,12 +287,49 @@ private fun AddServiceCard(
     }
 }
 
+/** Read-only dropdown over the terminal corpus so operators cannot invent a location. */
+@Composable
+private fun LocationPicker(
+    label: String,
+    value: String,
+    options: List<String>,
+    enabled: Boolean,
+    onPick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = expanded && enabled, onExpandedChange = { if (enabled) expanded = it }, modifier = modifier) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            readOnly = true,
+            enabled = enabled,
+            label = { Text(label) },
+            placeholder = { Text(if (enabled) "Choose" else "Loading…") },
+            singleLine = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+        )
+        ExposedDropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onPick(option)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun EditServiceSheet(
     service: OperatorService,
     isSaving: Boolean,
     error: String?,
-    onSave: (ServiceUpdate) -> Unit,
+    onSave: (fareText: String, durationText: String, hours: Set<Int>) -> Unit,
     onCancel: () -> Unit,
 ) {
     var fare by rememberSaveable { mutableStateOf(service.farePhp.toString()) }
@@ -275,7 +344,7 @@ private fun EditServiceSheet(
             .padding(bottom = 32.dp),
     ) {
         Text(
-            "Edit — ${service.origin} → ${service.destination} (${service.busClass.name})",
+            "Edit — ${service.origin} → ${service.destination} (${service.busClass.displayLabel(service.rideKind)})",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
@@ -313,17 +382,7 @@ private fun EditServiceSheet(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
             Button(
-                onClick = {
-                    val fareValue = fare.toDoubleOrNull()
-                    val durationValue = duration.toIntOrNull()
-                    onSave(
-                        ServiceUpdate(
-                            farePhp = fareValue?.takeIf { it > 0 && it != service.farePhp },
-                            durationMinutes = durationValue?.takeIf { it >= 15 && it != service.durationMinutes },
-                            departureHours = hours.sorted().takeIf { it != service.departureHours.sorted() },
-                        ),
-                    )
-                },
+                onClick = { onSave(fare, duration, hours) },
                 enabled = !isSaving,
                 modifier = Modifier.weight(1f),
             ) {

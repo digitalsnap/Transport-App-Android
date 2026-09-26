@@ -30,6 +30,16 @@ enum class DataSection(val label: String) {
     JOURNEYS("Journeys"),
 }
 
+/** Minimum the server accepts for a staff password set by hand. */
+const val MIN_STAFF_PASSWORD_LENGTH = 8
+
+/** A tapped row opened in the small detail sheet. */
+sealed interface DataDetail {
+    data class User(val user: PassengerAccount) : DataDetail
+    data class Hold(val hold: LiveHold) : DataDetail
+    data class Route(val route: RouteSummary) : DataDetail
+}
+
 data class AdminDataUiState(
     val isLoading: Boolean = true,
     val error: String? = null,
@@ -46,6 +56,7 @@ data class AdminDataUiState(
     val isActing: Boolean = false,
     /** Shown once: generated password from create / reset. */
     val issuedCredential: AccountCredential? = null,
+    val detail: DataDetail? = null,
     val message: String? = null,
 )
 
@@ -59,13 +70,18 @@ class AdminDataViewModel @Inject constructor(
     val uiState: StateFlow<AdminDataUiState> = _uiState.asStateFlow()
 
     private val loadedSections = mutableSetOf<DataSection>()
+    private var sessionKey: String? = null
 
-    init {
+    fun start(sessionKey: String) {
+        if (this.sessionKey == sessionKey) return
+        this.sessionKey = sessionKey
+        loadedSections.clear()
+        _uiState.value = AdminDataUiState()
         load()
     }
 
     fun selectSection(section: DataSection) {
-        _uiState.update { it.copy(section = section, error = null) }
+        _uiState.update { it.copy(section = section, error = null, detail = null) }
         if (section !in loadedSections) load() else _uiState.update { it.copy(isLoading = false) }
     }
 
@@ -94,7 +110,9 @@ class AdminDataViewModel @Inject constructor(
                     _uiState.update { it.copy(isLoading = false) }
                 }
                 .onFailure { throwable ->
-                    _uiState.update { it.copy(isLoading = false, error = throwable.message ?: "Unable to load ${section.label.lowercase()}") }
+                    _uiState.update {
+                        it.copy(isLoading = false, error = throwable.staffMessage("Unable to load ${section.label.lowercase()}"))
+                    }
                 }
         }
     }
@@ -106,6 +124,10 @@ class AdminDataViewModel @Inject constructor(
             adminRepository.getOperators().onSuccess { operators -> _uiState.update { it.copy(operators = operators) } }
         }
     }
+
+    fun openDetail(detail: DataDetail) = _uiState.update { it.copy(detail = detail) }
+
+    fun closeDetail() = _uiState.update { it.copy(detail = null) }
 
     /** Omit [password] to have one generated and returned once. PARTNER needs [operatorId]. */
     fun createAccount(email: String, role: StaffRole, operatorId: Int?, password: String?) {
@@ -127,9 +149,16 @@ class AdminDataViewModel @Inject constructor(
         }
     }
 
-    fun resetPassword(account: StaffAccount) {
-        act("New password generated for ${account.email}") {
-            adminRepository.resetPassword(account.id).map { credential -> credential }
+    /** Null [password] asks the server to generate one (returned once); otherwise the given one is set. */
+    fun resetPassword(account: StaffAccount, password: String?) {
+        val chosen = password?.takeIf { it.isNotBlank() }
+        if (chosen != null && chosen.length < MIN_STAFF_PASSWORD_LENGTH) {
+            _uiState.update { it.copy(message = "Password must be at least $MIN_STAFF_PASSWORD_LENGTH characters.") }
+            return
+        }
+        val successMessage = if (chosen == null) "New password generated for ${account.email}" else "Password set for ${account.email}"
+        act(successMessage) {
+            adminRepository.resetPassword(account.id, chosen).map { credential -> credential }
         }
     }
 
@@ -148,7 +177,7 @@ class AdminDataViewModel @Inject constructor(
                     if (_uiState.value.section == DataSection.ACCOUNTS) load() else loadedSections -= DataSection.ACCOUNTS
                 }
                 .onFailure { throwable ->
-                    _uiState.update { it.copy(isActing = false, error = throwable.message ?: "Action failed") }
+                    _uiState.update { it.copy(isActing = false, error = throwable.staffMessage("Action failed")) }
                 }
         }
     }

@@ -13,8 +13,8 @@ plugins {
     alias(libs.plugins.firebase.appdistribution)
 }
 
-// Release signing credentials. Never committed: keystore.properties is gitignored,
-// and CI supplies the same four values as RIDEVIBE_* environment variables.
+// Release signing credentials. Never committed: keystore.properties is gitignored;
+// a CI job can instead supply the same four values as RIDEVIBE_* environment variables.
 // See RELEASING.md for how to generate the keystore and fill this in.
 val keystoreProperties = Properties().apply {
     val file = rootProject.file("keystore.properties")
@@ -53,11 +53,17 @@ android {
         }
     }
 
+    lint {
+        abortOnError = true
+        checkDependencies = true
+        baseline = file("lint-baseline.xml")
+    }
+
     buildFeatures {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
+        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
 
     compileOptions {
@@ -72,6 +78,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 
             if (hasReleaseKeystore) {
@@ -115,8 +122,10 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.core.splashscreen)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -135,14 +144,10 @@ dependencies {
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.crashlytics)
 
-    // QR ticket scanner (bottom-nav Scan tab)
-    implementation(libs.camerax.core)
-    implementation(libs.camerax.camera2)
-    implementation(libs.camerax.lifecycle)
-    implementation(libs.camerax.view)
-    implementation(libs.mlkit.barcode.scanning)
-
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
     ksp(libs.hilt.compiler)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

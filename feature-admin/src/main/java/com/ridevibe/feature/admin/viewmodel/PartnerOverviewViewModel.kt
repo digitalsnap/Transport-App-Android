@@ -41,12 +41,12 @@ class PartnerOverviewViewModel @Inject constructor(
     val uiState: StateFlow<PartnerOverviewUiState> = _uiState.asStateFlow()
 
     private var operatorId: Int? = null
-    private var started = false
+    private var sessionKey: String? = null
 
-    /** Binds the portal to an operator; reloads when the admin switches company. */
-    fun start(operatorId: Int?) {
-        if (started && this.operatorId == operatorId) return
-        started = true
+    /** Binds the portal to a session and operator; reloads when either changes (sign-in, company switch). */
+    fun start(sessionKey: String, operatorId: Int?) {
+        if (this.sessionKey == sessionKey && this.operatorId == operatorId) return
+        this.sessionKey = sessionKey
         this.operatorId = operatorId
         _uiState.value = PartnerOverviewUiState()
         load()
@@ -57,7 +57,7 @@ class PartnerOverviewViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             val overview = partnerRepository.getOverview(operatorId)
             overview.onFailure { throwable ->
-                _uiState.update { it.copy(isLoading = false, error = throwable.message ?: "Unable to load overview") }
+                _uiState.update { it.copy(isLoading = false, error = throwable.staffMessage("Unable to load the overview")) }
                 return@launch
             }
             val trips = partnerRepository.getTrips(dateIso = null, operatorId = operatorId)
@@ -65,8 +65,8 @@ class PartnerOverviewViewModel @Inject constructor(
                 it.copy(
                     isLoading = false,
                     overview = overview.getOrNull(),
-                    todaysTrips = trips.getOrDefault(emptyList()),
-                    error = trips.exceptionOrNull()?.message,
+                    todaysTrips = trips.getOrDefault(it.todaysTrips),
+                    error = trips.exceptionOrNull()?.staffMessage("Unable to load today's departures"),
                 )
             }
         }
@@ -80,7 +80,7 @@ class PartnerOverviewViewModel @Inject constructor(
             partnerRepository.getTripSeats(trip.id, operatorId)
                 .onSuccess { seats -> _uiState.update { it.copy(isSeatsLoading = false, seats = seats) } }
                 .onFailure { throwable ->
-                    _uiState.update { it.copy(isSeatsLoading = false, seatsError = throwable.message ?: "Unable to load seats") }
+                    _uiState.update { it.copy(isSeatsLoading = false, seatsError = throwable.staffMessage("Unable to load seats")) }
                 }
         }
     }

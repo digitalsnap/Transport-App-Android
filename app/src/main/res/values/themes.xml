@@ -1,4 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.RideVibe" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Launch theme: the Android 12+ system splash (backported by
+         core-splashscreen) shows the brand mark on charcoal instead of a white
+         flash. MainActivity calls installSplashScreen(), which swaps to
+         postSplashScreenTheme before the first frame. -->
+    <style name="Theme.RideVibe" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/launcher_background</item>
+        <!-- The launcher foreground (logo scaled into the safe zone) rather than
+             the raw 108dp tile, so the splash's circular mask does not clip corners. -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.RideVibe.Main</item>
+    </style>
+
+    <!-- The theme the activity runs under. Compose draws everything; this only
+         sets the window background seen before the first frame and after
+         process death. -->
+    <style name="Theme.RideVibe.Main" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/brand_vapour</item>
+    </style>
 </resources>

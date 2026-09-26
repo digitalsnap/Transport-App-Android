@@ -1,7 +1,7 @@
 package com.ridevibe.core.network.auth
 
-import android.content.Context
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.ridevibe.core.network.storage.IdentityStore
+import com.ridevibe.core.network.storage.KeyValueStore
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -16,24 +16,21 @@ import javax.inject.Singleton
  * it, this provider is what the token attaches to, so the account survives the
  * migration rather than orphaning a device's bookings.
  *
- * Generated once and persisted. Cleared only by uninstall or clearing app data,
- * which loses that install's bookings — another reason this is not the endgame.
+ * Generated once and persisted (synchronously — losing it loses this
+ * install's bookings). Cleared only by uninstall or clearing app data, which
+ * is another reason this is not the endgame.
  */
 @Singleton
 class DeviceIdProvider @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @IdentityStore private val store: KeyValueStore,
 ) {
     /** Lazily resolved once per process; `by lazy` is synchronized by default. */
     val deviceId: String by lazy {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.getString(KEY_DEVICE_ID, null)
-            ?: UUID.randomUUID().toString().also { generated ->
-                prefs.edit().putString(KEY_DEVICE_ID, generated).apply()
-            }
+        store.get(KEY_DEVICE_ID)
+            ?: UUID.randomUUID().toString().also { generated -> store.put(KEY_DEVICE_ID, generated, sync = true) }
     }
 
     private companion object {
-        const val PREFS_NAME = "ridevibe_identity"
         const val KEY_DEVICE_ID = "device_id"
     }
 }

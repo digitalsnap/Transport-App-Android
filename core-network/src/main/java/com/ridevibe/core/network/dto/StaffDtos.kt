@@ -3,8 +3,6 @@ package com.ridevibe.core.network.dto
 import com.ridevibe.core.domain.model.AccountCredential
 import com.ridevibe.core.domain.model.AdminOverview
 import com.ridevibe.core.domain.model.AllocatedSeat
-import com.ridevibe.core.domain.model.BookingStatus
-import com.ridevibe.core.domain.model.BusClass
 import com.ridevibe.core.domain.model.CoPassenger
 import com.ridevibe.core.domain.model.CuratedJourney
 import com.ridevibe.core.domain.model.DayCount
@@ -20,19 +18,13 @@ import com.ridevibe.core.domain.model.OperatorSummary
 import com.ridevibe.core.domain.model.PartnerOverview
 import com.ridevibe.core.domain.model.PartnerTokenIssued
 import com.ridevibe.core.domain.model.PassengerAccount
-import com.ridevibe.core.domain.model.PassengerType
-import com.ridevibe.core.domain.model.PaymentMethod
-import com.ridevibe.core.domain.model.PaymentStatus
 import com.ridevibe.core.domain.model.RefundStatus
-import com.ridevibe.core.domain.model.RideKind
 import com.ridevibe.core.domain.model.RouteSummary
-import com.ridevibe.core.domain.model.SeatStatus
 import com.ridevibe.core.domain.model.ServiceChanged
 import com.ridevibe.core.domain.model.ServiceCreated
 import com.ridevibe.core.domain.model.ServiceUpdate
 import com.ridevibe.core.domain.model.StaffAccount
 import com.ridevibe.core.domain.model.StaffAuthOptions
-import com.ridevibe.core.domain.model.StaffRole
 import com.ridevibe.core.domain.model.StaffSession
 import com.ridevibe.core.domain.model.SupportBooking
 import com.ridevibe.core.domain.model.TripOccupancy
@@ -44,27 +36,17 @@ import kotlinx.serialization.json.JsonPrimitive
  * DTOs for the staff surfaces: /auth/…, /admin/api/…, /partner/api/…
  * (backend: src/routes/auth.ts, admin.ts, partner.ts).
  *
- * Enum parsing is LENIENT throughout — a staff view must never crash because
- * the server grew a new value. Unknown strings fall back to the safest default.
+ * Enum parsing is LENIENT throughout (EnumParsing.kt) — a staff view must
+ * never crash because the server grew a new value. Unknown strings fall back
+ * to the safest default and are logged.
  * Request DTOs rely on kotlinx.serialization's `encodeDefaults = false`: a
  * nullable field left at its `null` default is OMITTED, which is what the
  * server's zod `.optional()` schemas expect (an explicit `null` would be a 400).
  */
 
-// ── Lenient enum parsing ──────────────────────────────────────────────────────
+// Lenient enum parsing (shared with the passenger DTOs) lives in EnumParsing.kt.
 
-internal inline fun <reified E : Enum<E>> String?.toEnumOr(default: E): E =
-    this?.let { raw -> enumValues<E>().firstOrNull { it.name.equals(raw.trim(), ignoreCase = true) } } ?: default
-
-internal fun String?.toBusClass(): BusClass = toEnumOr(BusClass.ORDINARY)
-internal fun String?.toRideKind(): RideKind = toEnumOr(RideKind.BUS)
-internal fun String?.toPassengerType(): PassengerType = toEnumOr(PassengerType.REGULAR)
-internal fun String?.toPaymentMethod(): PaymentMethod = toEnumOr(PaymentMethod.CASH_ON_BOARD)
-internal fun String?.toPaymentStatus(): PaymentStatus = toEnumOr(PaymentStatus.CASH_ON_BOARD)
-internal fun String?.toSeatStatusLenient(): SeatStatus = toEnumOr(SeatStatus.AVAILABLE)
-internal fun String?.toBookingStatus(): BookingStatus = toEnumOr(BookingStatus.CONFIRMED)
-internal fun String?.toRefundStatus(): RefundStatus = toEnumOr(RefundStatus.NONE)
-internal fun String?.toStaffRole(): StaffRole = toEnumOr(StaffRole.PARTNER)
+private const val DAY_MILLIS = 86_400_000L
 
 // ── /auth ─────────────────────────────────────────────────────────────────────
 
@@ -74,7 +56,11 @@ data class StaffAuthConfigDto(
     val googleClientId: String? = null,
     val emailKeyEnabled: Boolean = false,
 ) {
-    fun toDomain() = StaffAuthOptions(googleEnabled = googleEnabled, emailKeyEnabled = emailKeyEnabled)
+    fun toDomain() = StaffAuthOptions(
+        googleEnabled = googleEnabled,
+        emailKeyEnabled = emailKeyEnabled,
+        googleClientId = googleClientId?.takeIf { it.isNotBlank() },
+    )
 }
 
 @Serializable
@@ -100,12 +86,14 @@ data class StaffSessionDto(
     val operatorName: String? = null,
     val expiresInDays: Int? = null,
 ) {
-    fun toDomain() = StaffSession(
+    /** The server states a lifetime, not an instant: the expiry is anchored to sign-in time here. */
+    fun toDomain(nowEpochMillis: Long = System.currentTimeMillis()) = StaffSession(
         token = token,
         email = email,
         role = role.toStaffRole(),
         operatorId = operatorId,
         operatorName = operatorName,
+        expiresAtEpochMillis = expiresInDays?.let { nowEpochMillis + it * DAY_MILLIS },
     )
 }
 
@@ -126,12 +114,14 @@ data class StaffMeDto(
     val operatorId: Int? = null,
     val operatorName: String? = null,
 ) {
-    fun toDomain(token: String) = StaffSession(
+    /** `/auth/me` never restates the expiry; the caller passes the one it persisted at sign-in. */
+    fun toDomain(token: String, expiresAtEpochMillis: Long? = null) = StaffSession(
         token = token,
         email = email,
         role = role.toStaffRole(),
         operatorId = operatorId,
         operatorName = operatorName,
+        expiresAtEpochMillis = expiresAtEpochMillis,
     )
 }
 
