@@ -222,8 +222,8 @@ class SeatMapViewModel @Inject constructor(
     private fun startObserving(resyncFirst: Boolean) {
         observeJob?.cancel()
         observeJob = viewModelScope.launch {
-            if (resyncFirst) resyncSeatMap()
-            _uiState.update { it.copy(feedStatus = SeatFeedStatus.LIVE) }
+            val synced = !resyncFirst || resyncSeatMap()
+            if (synced) _uiState.update { it.copy(feedStatus = SeatFeedStatus.LIVE) }
             var attempt = 0
             while (isActive) {
                 try {
@@ -333,6 +333,13 @@ class SeatMapViewModel @Inject constructor(
         viewModelScope.launch {
             selectSeatUseCase(tripId, seat.id)
                 .onSuccess { serverExpiry ->
+                    // Two quick taps both pass the pre-lock size check; the second
+                    // lock to land gives its seat straight back instead of holding N+1.
+                    val current = _uiState.value
+                    if (seat.id !in current.selectedSeatIds && current.selectedSeatIds.size >= current.requiredSeatCount) {
+                        releaseQuietly(listOf(seat.id))
+                        return@onSuccess
+                    }
                     _uiState.update { state ->
                         state.copy(
                             selectedSeatIds = (state.selectedSeatIds + seat.id).distinct(),

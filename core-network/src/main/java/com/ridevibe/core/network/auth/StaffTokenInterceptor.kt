@@ -26,7 +26,7 @@ class StaffTokenInterceptor @Inject constructor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val path = request.url.encodedPath
+        val path = request.url.pathRelativeToBase()
         if (!path.isStaffPath()) return chain.proceed(request)
 
         val session = sessionStore.session.value ?: return chain.proceed(request)

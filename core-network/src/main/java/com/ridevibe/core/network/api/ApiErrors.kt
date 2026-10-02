@@ -28,7 +28,7 @@ class CrsApiException(val code: Int, override val message: String) : IOException
          * is required, which is what the staff fallback would wrongly say.
          */
         const val DEVICE_SESSION_REJECTED_MESSAGE =
-            "Your session on this device was not recognised. Restart the app to sign in again."
+            "This device is not recognised by the booking server. Try again in a moment or contact support."
     }
 }
 

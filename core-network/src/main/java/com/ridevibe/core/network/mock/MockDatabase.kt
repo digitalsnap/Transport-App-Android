@@ -961,7 +961,22 @@ class MockDatabase @Inject constructor() {
     fun seatMap(tripId: String): List<Seat> {
         val trip = trips[tripId] ?: return emptyList()
         if (trip.rideKind.sellsPassage) return emptyList()
-        return seatMaps.getOrPut(tripId) { buildSeatMap(trip) }
+        val seats = seatMaps.getOrPut(tripId) { buildSeatMap(trip) }
+        sweepExpiredHolds(tripId, seats)
+        return seats
+    }
+
+    /**
+     * The real CRS sweeps lapsed holds on read; without this the mock keeps a
+     * seat LOCKED forever after the UI has already told the rider the hold
+     * expired, and seeded competitor holds would never free up.
+     */
+    private fun sweepExpiredHolds(tripId: String, seats: MutableList<Seat>) {
+        val now = System.currentTimeMillis()
+        val lapsed = synchronized(seats) {
+            seats.filter { it.status == SeatStatus.LOCKED && (it.lockExpiresAtEpochMillis ?: Long.MAX_VALUE) <= now }
+        }
+        lapsed.forEach { updateSeat(tripId, it.id, SeatStatus.AVAILABLE, lockedBy = null) }
     }
 
     private fun buildSeatMap(trip: Trip): MutableList<Seat> {
@@ -1087,8 +1102,10 @@ class MockDatabase @Inject constructor() {
         } else {
             val seats = seatMap(tripId)
             val picked = seatIds.map { id -> seats.firstOrNull { it.id == id } ?: throw CrsApiException(404, "Seat $id not found") }
+            // Same rule as the server: a seat can only be booked while THIS rider
+            // holds it. An AVAILABLE seat means the hold lapsed or was never taken.
             val lost = picked.firstOrNull {
-                it.status == SeatStatus.OCCUPIED || (it.status == SeatStatus.LOCKED && it.lockedByUserId != MOCK_CURRENT_USER_ID)
+                it.status != SeatStatus.LOCKED || it.lockedByUserId != MOCK_CURRENT_USER_ID
             }
             if (lost != null) throw CrsApiException(409, "Seat ${lost.label} is no longer held by you")
             picked.map { it.label }

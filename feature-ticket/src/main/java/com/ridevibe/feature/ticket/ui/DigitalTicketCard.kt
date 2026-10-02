@@ -40,7 +40,8 @@ import com.ridevibe.feature.ticket.format.TicketFormatter
 /**
  * RideVibe boarding pass card (design pages 6-7): dark operator header,
  * high-density QR, ticket id, and the trip detail grid. [qrPayload] is a
- * server-signed token — this composable only renders it.
+ * payload the server issued (unsigned today; signing is a backend item in
+ * docs/api/PENDING-BACKEND.md) — this composable only renders it.
  *
  * [statusOverlay] ("CANCELLED", "REFUNDED", "LAPSED") greys the QR and stamps
  * it, so a dead ticket can never be mistaken for a live one at the door.

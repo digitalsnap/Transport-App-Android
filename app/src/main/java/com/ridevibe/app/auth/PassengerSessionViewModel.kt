@@ -61,8 +61,14 @@ class PassengerSessionViewModel @Inject constructor(
      * counts even if our own store was cleared, so the rider is not asked to
      * sign in twice.
      */
-    fun hasExistingSession(): Boolean =
-        store.session.value != null || GoogleSignIn.getLastSignedInAccount(context) != null
+    fun hasExistingSession(): Boolean {
+        if (store.session.value != null) return true
+        val account = GoogleSignIn.getLastSignedInAccount(context) ?: return false
+        // The SDK kept the account but our store never got it (process death
+        // between the sign-in result and the save): rebuild it so Profile agrees.
+        onGoogleSignedIn(account)
+        return true
+    }
 
     fun onGoogleSignedIn(account: GoogleSignInAccount) {
         store.save(
@@ -100,7 +106,7 @@ class PassengerSessionViewModel @Inject constructor(
     /**
      * Sign-out plus a wipe of everything this install keeps about the rider:
      * profile, booking cart, cached tickets. Server-side deletion needs the
-     * account backend (docs/CHECKLIST.md §1); until then this is the whole story.
+     * account backend (docs/DEVELOPER-ACTIONS.md §B); until then this is the whole story.
      */
     fun deleteAccount() {
         if (_uiState.value.isBusy) return

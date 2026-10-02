@@ -117,8 +117,19 @@ fun CheckoutScreen(
     }
 
     // Leaving mid-submission would orphan a booking the server may still issue.
-    BackHandler(enabled = uiState.isSubmitting) { showBusyDialog = true }
-    val guardedClose: () -> Unit = { if (uiState.isSubmitting) showBusyDialog = true else onClose() }
+    // After a partial failure the outbound leg is already a ticket, so leaving
+    // means "keep the outbound only": the cart resets and the ticket opens,
+    // rather than a stale outbound leg being re-booked from the seat map.
+    BackHandler(enabled = uiState.isSubmitting || uiState.partialFailure != null) {
+        if (uiState.isSubmitting) showBusyDialog = true else viewModel.continueWithOutboundOnly()
+    }
+    val guardedClose: () -> Unit = {
+        when {
+            uiState.isSubmitting -> showBusyDialog = true
+            uiState.partialFailure != null -> viewModel.continueWithOutboundOnly()
+            else -> onClose()
+        }
+    }
 
     val showHoldExpiredDialog = uiState.holdExpired && !uiState.isSubmitting &&
         uiState.confirmedTicketIds == null && uiState.partialFailure == null
@@ -409,7 +420,7 @@ private fun PaymentMethod.providerLabel(): String = when (this) {
  * The explicit demo gate. No payment provider is connected, so the online
  * methods confirm the booking directly once the rider acknowledges that.
  */
-// TODO(payments): replace with the PSP flow once a provider is chosen — see docs/CHECKLIST.md §1
+// TODO(payments): replace with the PSP flow once a provider is chosen — see docs/DEVELOPER-ACTIONS.md §B
 @Composable
 private fun PaymentDemoSheet(method: PaymentMethod, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss) {

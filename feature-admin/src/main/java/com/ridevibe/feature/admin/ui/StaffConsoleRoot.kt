@@ -50,13 +50,16 @@ private const val NO_OPERATOR = -1
  * Back inside the console steps back through these states before [onExit].
  *
  * [onGoogleSignIn] is optional: the host app, which has Play Services, runs
- * the Google flow for the given web-client id and returns the ID token.
- * Without it the sign-in screen hides the Google button.
+ * the Google flow for the given web-client id and answers with the ID token
+ * or the failure. Without it the sign-in screen hides the Google button. If
+ * the host loses the `onResult` callback to an Activity recreation, it hands
+ * the answer to [StaffSessionViewModel.deliverGoogleResult] on the same
+ * [sessionViewModel] instance instead, and the login screen picks it up here.
  */
 @Composable
 fun StaffConsoleRoot(
     onExit: () -> Unit,
-    onGoogleSignIn: ((clientId: String, onToken: (String) -> Unit) -> Unit)? = null,
+    onGoogleSignIn: ((clientId: String, onResult: (Result<String>) -> Unit) -> Unit)? = null,
     sessionViewModel: StaffSessionViewModel = hiltViewModel(),
 ) {
     val state by sessionViewModel.uiState.collectAsStateWithLifecycle()
@@ -83,6 +86,8 @@ fun StaffConsoleRoot(
             sessionError = state.error,
             onDismissSessionError = sessionViewModel::consumeError,
             onGoogleSignIn = onGoogleSignIn,
+            googleResult = state.googleResult,
+            onConsumeGoogleResult = sessionViewModel::consumeGoogleResult,
         )
 
         state.isLoading -> SessionCheckScreen(email = session.email, onExit = onExit)

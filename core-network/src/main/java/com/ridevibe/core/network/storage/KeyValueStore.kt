@@ -74,3 +74,8 @@ annotation class CartStore
 @Qualifier
 @Retention(AnnotationRetention.RUNTIME)
 annotation class TicketCacheStore
+
+/** The rider's device-local sign-in (provider, name, tokens). */
+@javax.inject.Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class PassengerSessionPrefs

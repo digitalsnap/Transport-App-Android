@@ -272,10 +272,16 @@ fun AdminDataTab(
     }
     state.issuedCredential?.let { credential ->
         val generated = credential.generatedPassword
+        // A reset signs the account out everywhere else; say so, or the admin
+        // will be surprised when the operator's other phone asks to log in again.
+        val revokedNote = credential.revokedSessions
+            ?.takeIf { it > 0 }
+            ?.let { " Their $it other sign-in${if (it == 1) "" else "s"} ended." }
+            .orEmpty()
         if (generated != null) {
             SecretRevealDialog(
                 title = "Temporary password",
-                message = "${credential.email} — copy this password now; it is shown once.",
+                message = "${credential.email} — copy this password now; it is shown once.$revokedNote",
                 secret = generated,
                 secretLabel = "Temporary password",
                 onDismiss = viewModel::dismissCredential,
@@ -284,7 +290,7 @@ fun AdminDataTab(
             AlertDialog(
                 onDismissRequest = viewModel::dismissCredential,
                 title = { Text("Account ready", fontWeight = FontWeight.Bold) },
-                text = { Text("${credential.email} can sign in with the password you entered.") },
+                text = { Text("${credential.email} can sign in with the password you entered.$revokedNote") },
                 confirmButton = { TextButton(onClick = viewModel::dismissCredential) { Text("Done") } },
             )
         }

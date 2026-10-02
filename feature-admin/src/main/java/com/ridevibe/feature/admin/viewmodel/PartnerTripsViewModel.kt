@@ -22,6 +22,11 @@ import javax.inject.Inject
 
 private const val DEFAULT_WALK_IN_NAME = "Walk-in passenger"
 
+// Limits of OnsiteSaleRequest in docs/api/staff-openapi.yaml: `seatLabels` maxItems / `count` maximum,
+// and `passengerFullName` maxLength — the server rejects anything past them with a 400.
+private const val ONSITE_SALE_MAX_PASSENGERS = 20
+private const val ONSITE_SALE_NAME_MAX_CHARS = 120
+
 data class PartnerTripsUiState(
     val isLoading: Boolean = true,
     val error: String? = null,
@@ -43,7 +48,7 @@ data class PartnerTripsUiState(
     val saleName: String = "",
     /** Open-seating passenger count as typed. */
     val saleCountText: String = "1",
-    /** One fare type per passenger being sold; sized to [passengerCount] on read. */
+    /** One fare type per passenger being sold, in [pickedSeatsOrdered] order on a bus; sized to [passengerCount] on read. */
     val passengerTypes: List<PassengerType> = emptyList(),
     val isSelling: Boolean = false,
     val saleError: String? = null,
@@ -51,6 +56,15 @@ data class PartnerTripsUiState(
     val saleIssued: OnsiteSaleIssued? = null,
     val message: String? = null,
 ) {
+    /**
+     * The picked seats in grid order (row, then column). This is the one
+     * ordering for the fare-type rows, the `seatLabels` sent and the tags in
+     * the passenger name, so passenger #2 on screen is passenger #2 on the
+     * ticket.
+     */
+    val pickedSeatsOrdered: List<String>
+        get() = seats.sortedWith(compareBy({ it.row }, { it.column })).map { it.label }.filter { it in pickedSeatLabels }
+
     /** How many people the sale covers: picked seats on a bus, the typed count on open seating. */
     val passengerCount: Int
         get() = when (selectedTrip?.rideKind) {
@@ -63,6 +77,18 @@ data class PartnerTripsUiState(
     val effectivePassengerTypes: List<PassengerType>
         get() = List(passengerCount) { index -> passengerTypes.getOrElse(index) { PassengerType.REGULAR } }
 
+    /**
+     * The name as sent: discounted fare types ride along as the rider QR's own
+     * tags (`Maria Santos (SR+R)`) because the sale request has no field for
+     * them yet — see docs/api/PENDING-BACKEND.md.
+     */
+    val saleNameTagged: String
+        get() {
+            val name = saleName.trim().ifBlank { DEFAULT_WALK_IN_NAME }
+            val types = effectivePassengerTypes
+            return if (types.any { it != PassengerType.REGULAR }) "$name (${types.joinToString("+") { it.qrTag() }})" else name
+        }
+
     /** Amount to collect at the counter with the regulated 20% discounts applied per passenger. */
     val saleAmountPhp: Double
         get() {
@@ -70,8 +96,38 @@ data class PartnerTripsUiState(
             return effectivePassengerTypes.sumOf { fare * (1 - it.discountRate) }
         }
 
+    /** Highlights the name field; the wording is in [saleValidationError]. */
+    val saleNameTooLong: Boolean get() = saleNameTagged.length > ONSITE_SALE_NAME_MAX_CHARS
+
+    /** Contract limits the server would answer 400 to, checked live so the form says so before "Confirm sale". */
+    val saleValidationError: String?
+        get() {
+            val trip = selectedTrip ?: return null
+            val isBus = trip.rideKind == RideKind.BUS
+            val over = saleNameTagged.length - ONSITE_SALE_NAME_MAX_CHARS
+            return when {
+                passengerCount > ONSITE_SALE_MAX_PASSENGERS ->
+                    "A counter sale covers at most $ONSITE_SALE_MAX_PASSENGERS ${if (isBus) "seats" else "passengers"} — " +
+                        "record the rest as a second sale"
+                !isBus && passengerCount > trip.available ->
+                    "Only ${trip.available} ${if (trip.available == 1) "space is" else "spaces are"} left on this sailing"
+                over > 0 ->
+                    "Passenger name is $over character${if (over == 1) "" else "s"} over the $ONSITE_SALE_NAME_MAX_CHARS limit" +
+                        (if (saleNameTagged != saleName.trim()) " (the fare-type tags count)" else "")
+                else -> null
+            }
+        }
+
     val canSell: Boolean
-        get() = !isSelling && selectedTrip != null && passengerCount > 0
+        get() = !isSelling && selectedTrip != null && passengerCount > 0 && saleValidationError == null
+}
+
+/** The same short tags `MockDatabase.createTicket` puts in a rider QR. */
+private fun PassengerType.qrTag(): String = when (this) {
+    PassengerType.REGULAR -> "R"
+    PassengerType.STUDENT -> "ST"
+    PassengerType.SENIOR_CITIZEN -> "SR"
+    PassengerType.PWD -> "PWD"
 }
 
 /** Partner Trips: departures by PH date, seat maps with passenger names, extra departures and on-site sales. */
@@ -206,7 +262,14 @@ class PartnerTripsViewModel @Inject constructor(
         if (writable && seat.status == SeatStatus.AVAILABLE) {
             _uiState.update { state ->
                 val picked = state.pickedSeatLabels
-                state.copy(pickedSeatLabels = if (seat.label in picked) picked - seat.label else picked + seat.label, saleError = null)
+                // Fare types are positional in grid order, so a seat picked mid-grid would shift
+                // everyone below it; carry each chosen type over by seat label instead.
+                val typeBySeat = state.pickedSeatsOrdered.zip(state.effectivePassengerTypes).toMap()
+                val next = state.copy(
+                    pickedSeatLabels = if (seat.label in picked) picked - seat.label else picked + seat.label,
+                    saleError = null,
+                )
+                next.copy(passengerTypes = next.pickedSeatsOrdered.map { typeBySeat[it] ?: PassengerType.REGULAR })
             }
         } else {
             _uiState.update { it.copy(inspecting = seat) }
@@ -230,35 +293,25 @@ class PartnerTripsViewModel @Inject constructor(
 
     /**
      * Bus: sells the picked seats. Open seating: sells the typed count, never
-     * more than the departure has left. Discounted fare types ride along in
-     * the passenger name (`Maria Santos (SR+R)`, the rider QR's own tags)
-     * because the sale request has no field for them yet — see
-     * docs/api/PENDING-BACKEND.md.
+     * more than the departure has left. The name goes out with the fare-type
+     * tags appended ([PartnerTripsUiState.saleNameTagged]).
      */
     fun recordOnsiteSale() {
         val state = _uiState.value
         val trip = state.selectedTrip ?: return
-        val name = state.saleName.trim().ifBlank { DEFAULT_WALK_IN_NAME }
-        val types = state.effectivePassengerTypes
-        val taggedName = if (types.any { it != PassengerType.REGULAR }) "$name (${types.joinToString("+") { it.qrTag() }})" else name
+        val problem = state.saleValidationError ?: when {
+            trip.rideKind == RideKind.BUS && state.pickedSeatLabels.isEmpty() -> "Tap the seats to sell first"
+            trip.rideKind != RideKind.BUS && state.passengerCount < 1 -> "Enter how many passengers to sell for"
+            else -> null
+        }
+        if (problem != null) {
+            _uiState.update { it.copy(saleError = problem) }
+            return
+        }
         val request = if (trip.rideKind == RideKind.BUS) {
-            if (state.pickedSeatLabels.isEmpty()) {
-                _uiState.update { it.copy(saleError = "Tap the seats to sell first") }
-                return
-            }
-            OnsiteSaleRequest(seatLabels = state.pickedSeatLabels.toList(), passengerFullName = taggedName)
+            OnsiteSaleRequest(seatLabels = state.pickedSeatsOrdered, passengerFullName = state.saleNameTagged)
         } else {
-            val count = state.saleCountText.toIntOrNull()
-            val problem = when {
-                count == null || count < 1 -> "Enter how many passengers to sell for"
-                count > trip.available -> "Only ${trip.available} ${if (trip.available == 1) "space is" else "spaces are"} left on this sailing"
-                else -> null
-            }
-            if (problem != null || count == null) {
-                _uiState.update { it.copy(saleError = problem) }
-                return
-            }
-            OnsiteSaleRequest(count = count, passengerFullName = taggedName)
+            OnsiteSaleRequest(count = state.passengerCount, passengerFullName = state.saleNameTagged)
         }
         viewModelScope.launch {
             _uiState.update { it.copy(isSelling = true, saleError = null) }
@@ -280,12 +333,4 @@ class PartnerTripsViewModel @Inject constructor(
     fun dismissSale() = _uiState.update { it.copy(saleIssued = null) }
 
     fun consumeMessage() = _uiState.update { it.copy(message = null) }
-
-    /** The same short tags `MockDatabase.createTicket` puts in a rider QR. */
-    private fun PassengerType.qrTag(): String = when (this) {
-        PassengerType.REGULAR -> "R"
-        PassengerType.STUDENT -> "ST"
-        PassengerType.SENIOR_CITIZEN -> "SR"
-        PassengerType.PWD -> "PWD"
-    }
 }

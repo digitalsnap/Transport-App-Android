@@ -78,6 +78,10 @@ class ExploreViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val query: String = savedStateHandle.get<String>("query").orEmpty().trim()
+    // Party from the Home form (route args); absent on older entry points → one adult.
+    private val partyAdults: Int = savedStateHandle.get<String>("adults")?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+    private val partyChildren: Int = savedStateHandle.get<String>("children")?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+    private val partyInfants: Int = savedStateHandle.get<String>("infants")?.toIntOrNull()?.coerceAtLeast(0) ?: 0
     private val departureDateMillis: Long = PhTime.startOfDay(
         savedStateHandle.get<String>("date")?.toLongOrNull()?.takeIf { it > 0 } ?: System.currentTimeMillis(),
     )
@@ -161,6 +165,13 @@ class ExploreViewModel @Inject constructor(
      */
     fun onTripChosen(trip: Trip, leg: ExploreLeg, callerSupportsLegs: Boolean): CartLeg {
         val state = _uiState.value
+        // A pick from the Return section while this explore's outbound leg is
+        // already in the cart completes the round trip; re-priming would wipe it.
+        if (callerSupportsLegs && state.isRoundTrip && leg == ExploreLeg.RETURN &&
+            bookingCart.isRoundTrip && bookingCart.outboundTripId != null
+        ) {
+            return CartLeg.RETURN
+        }
         val roundTrip = callerSupportsLegs && state.isRoundTrip && leg == ExploreLeg.OUTBOUND
         bookingCart.prime(
             isRoundTrip = roundTrip,
@@ -169,9 +180,9 @@ class ExploreViewModel @Inject constructor(
             departDateMillis = PhTime.startOfDay(trip.departureEpochMillis),
             returnDateMillis = state.returnDateMillis.takeIf { roundTrip },
             busClass = null,
-            adults = 1,
-            children = 0,
-            infants = 0,
+            adults = partyAdults,
+            children = partyChildren,
+            infants = partyInfants,
             forSelf = true,
             rideKind = trip.rideKind,
         )
@@ -181,7 +192,15 @@ class ExploreViewModel @Inject constructor(
     /** Splits trips by direction (return-day departures) and ride kind, sorted; recomputed per input change. */
     private fun derive(state: ExploreUiState): ExploreUiState {
         val returnStart = state.returnDateMillis?.takeIf { it > state.dateMillis }
-        val (returnTrips, outboundTrips) = state.trips.partition { returnStart != null && it.departureEpochMillis >= returnStart }
+        val place = state.query.trim()
+        // Same-day round trip: the date cannot separate the legs, so a trip that
+        // leaves the searched place (and does not head to it) is the return leg.
+        // Region queries match neither name and stay outbound.
+        fun Trip.departsFromPlace() = place.isNotBlank() &&
+            origin.contains(place, ignoreCase = true) && !destination.contains(place, ignoreCase = true)
+        val (returnTrips, outboundTrips) = state.trips.partition {
+            state.isRoundTrip && if (returnStart != null) it.departureEpochMillis >= returnStart else it.departsFromPlace()
+        }
         fun sections(trips: List<Trip>, leg: ExploreLeg) = RideKind.entries.map { kind ->
             ExploreSection(
                 kind = kind,

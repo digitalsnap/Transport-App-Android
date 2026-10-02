@@ -1,5 +1,7 @@
 package com.ridevibe.core.network.auth
 
+import com.ridevibe.core.network.BuildConfig
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.Response
 import javax.inject.Inject
@@ -28,7 +30,7 @@ class DeviceIdInterceptor @Inject constructor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        if (!request.url.encodedPath.startsWith(PASSENGER_PATH_PREFIX)) return chain.proceed(request)
+        if (!request.url.pathRelativeToBase().startsWith(PASSENGER_PATH_PREFIX)) return chain.proceed(request)
 
         val response = chain.proceed(
             request.newBuilder()
@@ -44,4 +46,14 @@ class DeviceIdInterceptor @Inject constructor(
         const val HEADER_DEVICE_ID = "X-Device-Id"
         const val HEADER_USER_ID = "X-User-Id"
     }
+}
+
+/**
+ * The request path with the base URL's own path removed, so a base like
+ * `https://host/crs/` still matches `/v1/...` and `/admin/...` prefixes.
+ */
+internal fun okhttp3.HttpUrl.pathRelativeToBase(): String {
+    val basePath = BuildConfig.API_BASE_URL.toHttpUrl().encodedPath.trimEnd('/')
+    val path = encodedPath
+    return if (basePath.isNotEmpty() && path.startsWith(basePath)) path.removePrefix(basePath) else path
 }

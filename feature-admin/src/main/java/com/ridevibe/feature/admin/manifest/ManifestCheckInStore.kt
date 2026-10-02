@@ -13,6 +13,12 @@ import javax.inject.Singleton
  * device-local — see docs/api/PENDING-BACKEND.md. Until the endpoint lands, two conductors
  * scanning the same trip on two phones will not see each other's check-ins, and a reinstall
  * forgets them. Stored as one preference per trip: `ticketId=scannedAtEpochMillis` pairs.
+ *
+ * The endpoint must also re-validate the booking server-side (status still CONFIRMED, ticket
+ * belongs to that trip) rather than trust the client's verdict: a scan is checked against the
+ * manifest snapshot on the phone, which can be minutes old, so a booking cancelled after the last
+ * fetch would board here. `PartnerManifestViewModel` refreshes after each boarding to narrow that
+ * window, but only the server can close it.
  */
 @Singleton
 class ManifestCheckInStore @Inject constructor(

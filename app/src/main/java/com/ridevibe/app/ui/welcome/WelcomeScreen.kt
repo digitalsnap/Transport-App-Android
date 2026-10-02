@@ -318,7 +318,7 @@ fun WelcomeScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 // TODO(auth): route to an email/password sign-in once the CRS has
-                // passenger accounts (docs/CHECKLIST.md §1); until then this is the guest path.
+                // passenger accounts (docs/DEVELOPER-ACTIONS.md §B); until then this is the guest path.
                 TextButton(onClick = {
                     sessionViewModel.continueAsGuest()
                     onGetStarted()

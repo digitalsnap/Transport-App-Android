@@ -88,8 +88,10 @@ object PhTime {
         val (year, month, day) = match.destructured
         val calendar = Calendar.getInstance(zone, Locale.US)
         calendar.clear()
+        // Strict: "2026-02-31" must be rejected, not rolled to March 3 (the server 400s it).
+        calendar.isLenient = false
         calendar.set(year.toInt(), month.toInt() - 1, day.toInt(), hour, minute, 0)
-        return calendar.timeInMillis
+        return runCatching { calendar.timeInMillis }.getOrNull()
     }
 
     /** The PH calendar day [dateIso] as a half-open epoch range, or null when malformed. */

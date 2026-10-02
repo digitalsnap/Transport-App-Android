@@ -16,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -71,7 +72,7 @@ private object Routes {
     // separate destination that carries the chosen topic + booking context.
     val CHAT = BottomTab.CHAT.route
     const val CHAT_THREAD = "chat/thread?topic={topic}&booking={booking}"
-    const val EXPLORE = "explore/{query}?date={date}&returnDate={returnDate}"
+    const val EXPLORE = "explore/{query}?date={date}&returnDate={returnDate}&adults={adults}&children={children}&infants={infants}"
     const val RESULTS = "results/{origin}/{destination}/{dateMillis}/{busClass}/{adults}/{children}/{infants}/{forSelf}/{leg}?rideKind={rideKind}"
     const val SEAT_MAP = "trips/{tripId}/seatmap/{seatCount}/{infants}/{forSelf}/{leg}"
     const val CHECKOUT = "trips/{tripId}/checkout/{seats}/{infants}/{forSelf}"
@@ -108,8 +109,15 @@ private object Routes {
     fun chatThread(topic: String?, bookingLabel: String?) =
         "chat/thread?topic=${Uri.encode(topic.orEmpty())}&booking=${Uri.encode(bookingLabel.orEmpty())}"
 
-    fun explore(query: String, dateMillis: Long, returnDateMillis: Long?) =
-        "explore/${Uri.encode(query)}?date=$dateMillis&returnDate=${returnDateMillis ?: 0L}"
+    fun explore(
+        query: String,
+        dateMillis: Long,
+        returnDateMillis: Long?,
+        adults: Int = 1,
+        children: Int = 0,
+        infants: Int = 0,
+    ) = "explore/${Uri.encode(query)}?date=$dateMillis&returnDate=${returnDateMillis ?: 0L}" +
+        "&adults=$adults&children=$children&infants=$infants"
 }
 
 /** The return-leg search: origin and destination swapped, same party, same class. */
@@ -144,7 +152,7 @@ fun RideVibeNavGraph(navController: NavHostController) {
 
     // The cart persists across process death, so a missing outbound leg on the
     // return leg means the session really is gone: back to Home with a message.
-    var sessionLost by remember { mutableStateOf(false) }
+    var sessionLost by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(sessionLost) {
         if (sessionLost) {
             snackbarHostState.showSnackbar("Your booking session was lost, start again")
@@ -240,6 +248,11 @@ fun RideVibeNavGraph(navController: NavHostController) {
                 onExplore = { query, dateMillis, returnDateMillis ->
                     navController.navigate(Routes.explore(query, dateMillis, returnDateMillis))
                 },
+                // Preferred: the header search carries the party from the trip form
+                // so an Explore pick books the whole family, not one adult.
+                onExploreWithParty = { query, dateMillis, returnDateMillis, adults, children, infants ->
+                    navController.navigate(Routes.explore(query, dateMillis, returnDateMillis, adults, children, infants))
+                },
             )
         }
 
@@ -249,6 +262,9 @@ fun RideVibeNavGraph(navController: NavHostController) {
                 navArgument("query") { type = NavType.StringType },
                 navArgument("date") { type = NavType.StringType; defaultValue = "0" },
                 navArgument("returnDate") { type = NavType.StringType; defaultValue = "0" },
+                navArgument("adults") { type = NavType.StringType; defaultValue = "1" },
+                navArgument("children") { type = NavType.StringType; defaultValue = "0" },
+                navArgument("infants") { type = NavType.StringType; defaultValue = "0" },
             ),
         ) {
             ExploreScreen(
@@ -393,7 +409,13 @@ fun RideVibeNavGraph(navController: NavHostController) {
             ProfileScreen(
                 onBack = { navController.popBackStack() },
                 onOpenStaffConsole = { navController.navigate(Routes.STAFF) },
-                onSignIn = { navController.navigate(Routes.WELCOME) },
+                // Welcome pushes a fresh Home on success, so clear the stack first
+                // rather than ending up with HOME → PROFILE → HOME.
+                onSignIn = {
+                    navController.navigate(Routes.WELCOME) {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                    }
+                },
                 // Signed out: nothing behind Welcome, so Back leaves the app rather than reopening Profile.
                 onSignedOut = {
                     navController.navigate(Routes.WELCOME) {
@@ -408,21 +430,48 @@ fun RideVibeNavGraph(navController: NavHostController) {
             val context = LocalContext.current
             // The console asks for a Google ID token minted against the backend's
             // web client id; Play Services is an app-module dependency, so the
-            // launcher lives here and hands the token back through the callback.
-            var pendingToken by remember { mutableStateOf<((String) -> Unit)?>(null) }
+            // launcher lives here and answers through the console's callback.
+            //
+            // A lambda cannot be saved, so if the Activity is recreated under the
+            // account chooser the callback is gone while the launcher still
+            // delivers. The saveable flag remembers that a flow is in progress and
+            // the answer then goes to the session view model, which is scoped to
+            // this nav entry (the same instance the console composes with).
+            val staffSessionViewModel: com.ridevibe.feature.admin.viewmodel.StaffSessionViewModel = hiltViewModel()
+            var googleFlowPending by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+            var pendingOnResult by remember { mutableStateOf<((Result<String>) -> Unit)?>(null) }
             val googleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-                val onToken = pendingToken ?: return@rememberLauncherForActivityResult
-                pendingToken = null
-                if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
-                val token = runCatching {
-                    GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)?.idToken
-                }.getOrNull()
-                if (token != null) onToken(token)
+                if (!googleFlowPending) return@rememberLauncherForActivityResult
+                googleFlowPending = false
+                val deliver = pendingOnResult ?: staffSessionViewModel::deliverGoogleResult
+                pendingOnResult = null
+                val outcome: Result<String> = if (result.resultCode != Activity.RESULT_OK) {
+                    Result.failure<String>(com.ridevibe.feature.admin.auth.GoogleSignInCancelled())
+                } else {
+                    runCatching { GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java) }
+                        .fold(
+                            onSuccess = { account ->
+                                account?.idToken?.let { Result.success(it) }
+                                    ?: Result.failure<String>(com.ridevibe.feature.admin.auth.GoogleSignInFailed.noIdToken())
+                            },
+                            onFailure = { throwable ->
+                                Result.failure<String>(
+                                    if (throwable is ApiException) {
+                                        com.ridevibe.feature.admin.auth.googleSignInFailure(throwable.statusCode)
+                                    } else {
+                                        throwable
+                                    },
+                                )
+                            },
+                        )
+                }
+                deliver(outcome)
             }
             StaffConsoleRoot(
                 onExit = { navController.popBackStack() },
-                onGoogleSignIn = { clientId, onToken ->
-                    pendingToken = onToken
+                onGoogleSignIn = { clientId, onResult ->
+                    pendingOnResult = onResult
+                    googleFlowPending = true
                     val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                         .requestIdToken(clientId)
                         .requestEmail()
@@ -431,6 +480,7 @@ fun RideVibeNavGraph(navController: NavHostController) {
                     // Sign out first so the account chooser always appears for staff.
                     client.signOut().addOnCompleteListener { googleLauncher.launch(client.signInIntent) }
                 },
+                sessionViewModel = staffSessionViewModel,
             )
         }
 
@@ -562,11 +612,22 @@ fun RideVibeNavGraph(navController: NavHostController) {
                         popUpTo(Routes.HOME)
                     }
                 },
-                // The hold lapsed mid-checkout: the seat map below re-checks and
-                // lets the rider pick again (a lapsed return leg is dropped too).
+                // The hold lapsed mid-checkout. Checkout counts down the EARLIER of
+                // the two holds, which on a round trip is normally the outbound one
+                // (it was taken first), so popping one screen would land on the
+                // return seat map whose hold is still fine and loop straight back
+                // here. Unwind past the return-leg results instead: that lands on
+                // the outbound seat map, which shows its own "hold expired" dialog.
                 onHoldExpired = {
+                    val now = System.currentTimeMillis()
+                    val outboundLapsed = cart.outboundHoldExpiresAtEpochMillis?.let { it <= now } == true
                     if (cart.isRoundTrip) cart.clearReturnLeg()
-                    navController.popBackStack()
+                    if (cart.isRoundTrip && outboundLapsed) {
+                        navController.popBackStack(Routes.RESULTS, inclusive = false)
+                        navController.popBackStack(Routes.RESULTS, inclusive = true)
+                    } else {
+                        navController.popBackStack()
+                    }
                 },
             )
         }
@@ -576,13 +637,21 @@ fun RideVibeNavGraph(navController: NavHostController) {
             arguments = listOf(navArgument("ticketIds") { type = NavType.StringType }),
             deepLinks = listOf(navDeepLink { uriPattern = Routes.DEEP_LINK_TICKET }),
         ) {
+            // A ridevibe://ticket deep link on a cold start has no Home beneath it,
+            // so fall back to navigating there rather than leaving a dead button.
+            val toHome = {
+                if (!navController.popBackStack(Routes.HOME, inclusive = false)) {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            }
             TicketScreen(
-                onBackToHome = {
-                    navController.popBackStack(Routes.HOME, inclusive = false)
-                },
+                onBackToHome = toHome,
                 onBookAgain = {
                     cart.reset()
-                    navController.popBackStack(Routes.HOME, inclusive = false)
+                    toHome()
                 },
             )
         }

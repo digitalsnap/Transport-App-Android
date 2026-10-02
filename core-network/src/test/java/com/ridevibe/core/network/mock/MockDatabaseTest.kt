@@ -126,6 +126,8 @@ class MockDatabaseTest {
     fun `lapsed cash-on-board reservations are cancelled and free their seats`() {
         val trip = busTrips("Cubao", "Baguio").first { it.availableSeatCount > 3 }
         val seat = db.seatMap(trip.id).first { it.status == SeatStatus.AVAILABLE }
+        // Booking requires a live hold by this rider, exactly like the CRS.
+        db.updateSeat(trip.id, seat.id, SeatStatus.LOCKED, MOCK_CURRENT_USER_ID)
         val ticket = db.createTicket(trip.id, listOf(seat.id), juan, emptyList(), 0, PaymentMethod.CASH_ON_BOARD, "cash-1")
         assertNotNull(ticket.reservationExpiresAtEpochMillis)
         assertEquals(SeatStatus.OCCUPIED, db.seatMap(trip.id).first { it.id == seat.id }.status)
@@ -151,6 +153,8 @@ class MockDatabaseTest {
         val staff = MockStaffDatabase(db)
         val trip = busTrips("Cubao", "Baguio").first { it.availableSeatCount > 3 }
         val seat = db.seatMap(trip.id).first { it.status == SeatStatus.AVAILABLE }
+        // Booking requires a live hold by this rider, exactly like the CRS.
+        db.updateSeat(trip.id, seat.id, SeatStatus.LOCKED, MOCK_CURRENT_USER_ID)
         val ticket = db.createTicket(trip.id, listOf(seat.id), juan, emptyList(), 0, PaymentMethod.GCASH, "support-1")
 
         val freed = staff.cancelBooking(ticket.id, "Passenger request")

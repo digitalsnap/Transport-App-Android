@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.ridevibe.core.domain.model.StaffAuthOptions
 import com.ridevibe.core.domain.repository.StaffAuthRepository
 import com.ridevibe.core.network.api.CrsApiException
+import com.ridevibe.feature.admin.auth.GoogleSignInCancelled
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -166,9 +167,19 @@ class StaffLoginViewModel @Inject constructor(
         }
     }
 
-    /** The host app could not complete the Google flow (cancelled, Play Services missing). */
-    fun onGoogleSignInFailed(reason: String?) {
-        _uiState.update { it.copy(isSigningInWithGoogle = false, error = reason ?: "Google sign-in was cancelled.") }
+    /**
+     * What the host app's Google flow produced: an ID token to exchange, or why
+     * there is none. A closed account chooser ([GoogleSignInCancelled]) is not
+     * reported; every other failure lands in the same error line as a wrong
+     * password so nothing fails silently.
+     */
+    fun onGoogleResult(result: Result<String>) {
+        result
+            .onSuccess(::signInWithGoogle)
+            .onFailure { throwable ->
+                val reason = if (throwable is GoogleSignInCancelled) null else throwable.message ?: "Google sign-in failed."
+                _uiState.update { it.copy(isSigningInWithGoogle = false, error = reason) }
+            }
     }
 
     /**

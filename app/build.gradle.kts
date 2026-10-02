@@ -21,11 +21,28 @@ val keystoreProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
+// A blank value in keystore.properties falls through to the environment variable.
 fun signingSecret(key: String, envVar: String): String? =
-    (keystoreProperties.getProperty(key) ?: System.getenv(envVar))?.takeIf { it.isNotBlank() }
+    keystoreProperties.getProperty(key)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(envVar)?.takeIf { it.isNotBlank() }
 
 val releaseStoreFile = signingSecret("storeFile", "RIDEVIBE_STORE_FILE")
 val hasReleaseKeystore = releaseStoreFile != null
+if (hasReleaseKeystore) {
+    // A storeFile with no password or alias would only fail deep inside packaging.
+    val missing = listOf(
+        "storePassword" to "RIDEVIBE_STORE_PASSWORD",
+        "keyAlias" to "RIDEVIBE_KEY_ALIAS",
+        "keyPassword" to "RIDEVIBE_KEY_PASSWORD",
+    ).filter { (key, env) -> signingSecret(key, env) == null }.map { it.first }
+    // Warn, never fail: a half-filled file must not block debug builds on a dev machine.
+    if (missing.isNotEmpty()) {
+        logger.warn("RideVibe: keystore.properties sets storeFile but is missing ${missing.joinToString()} - assembleRelease will not sign (RELEASING.md Part 1).")
+    }
+    if (!file(releaseStoreFile!!).exists()) {
+        logger.warn("RideVibe: release keystore '$releaseStoreFile' does not exist yet - assembleRelease will fail at packaging until it is generated (RELEASING.md Part 1).")
+    }
+}
 
 android {
     namespace = "com.ridevibe.app"

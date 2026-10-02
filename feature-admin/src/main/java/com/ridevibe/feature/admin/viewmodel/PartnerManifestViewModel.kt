@@ -139,17 +139,31 @@ class PartnerManifestViewModel @Inject constructor(
         load()
     }
 
-    fun load() {
+    fun load() = fetchManifest(showSpinner = true)
+
+    /**
+     * Same fetch without the loading state, so the scanner keeps its camera
+     * preview while the manifest catches up on cancellations made since the
+     * last load. A failure is not reported either: the snapshot on screen
+     * stays usable and the next explicit load will say what is wrong.
+     */
+    private fun refresh() = fetchManifest(showSpinner = false)
+
+    private fun fetchManifest(showSpinner: Boolean) {
         val dateIso = _uiState.value.dateIso
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            if (showSpinner) _uiState.update { it.copy(isLoading = true, error = null) }
             partnerRepository.getManifest(dateIso = dateIso, operatorId = operatorId)
                 .onSuccess { entries ->
+                    // The day may have changed while the request was out; that answer belongs to the other date.
+                    if (_uiState.value.dateIso != dateIso) return@onSuccess
                     val boarded = checkInStore.boardedFor(entries.map { it.tripId }).values.fold(emptyMap<String, Long>()) { acc, m -> acc + m }
                     _uiState.update { it.copy(isLoading = false, entries = entries, boarded = boarded) }
                 }
                 .onFailure { throwable ->
-                    _uiState.update { it.copy(isLoading = false, error = throwable.staffMessage("Unable to load the manifest")) }
+                    if (showSpinner) {
+                        _uiState.update { it.copy(isLoading = false, error = throwable.staffMessage("Unable to load the manifest")) }
+                    }
                 }
         }
     }
@@ -166,7 +180,16 @@ class PartnerManifestViewModel @Inject constructor(
 
     fun dismissOutcome() = _uiState.update { it.copy(lastOutcome = null) }
 
-    /** A QR was decoded by the camera: match it against the loaded manifest and record the boarding. */
+    /**
+     * A QR was decoded by the camera: match it against the loaded manifest and
+     * record the boarding.
+     *
+     * The match is against the manifest as last fetched, so a booking cancelled
+     * after that still reads CONFIRMED here. Each successful boarding therefore
+     * triggers a silent [refresh], which catches the cancellation by the next
+     * scan. That is a stopgap: the check-in endpoint, once it exists, must
+     * re-validate the booking's status server-side (see `ManifestCheckInStore`).
+     */
     fun onScanned(rawPayload: String) {
         val payload = RiderQrPayload.parse(rawPayload)
         if (payload == null) {
@@ -188,6 +211,7 @@ class PartnerManifestViewModel @Inject constructor(
             else -> checkIn(byTicket.first { payload.tripId == null || it.tripId == payload.tripId })
         }
         _uiState.update { it.copy(lastOutcome = outcome) }
+        if (outcome is CheckInOutcome.Boarded) refresh()
     }
 
     /** "Mark boarded" on a row, step one: ask. */

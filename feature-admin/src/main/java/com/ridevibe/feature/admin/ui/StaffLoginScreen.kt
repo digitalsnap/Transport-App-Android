@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -69,8 +70,10 @@ import com.ridevibe.feature.admin.viewmodel.StaffLoginViewModel
  * console root to the signed-in surface.
  *
  * [onGoogleSignIn] is supplied by the host app, which owns Play Services:
- * it receives the server's web-client id, runs the Google flow and hands the
- * ID token back. Null hides the Google button entirely.
+ * it receives the server's web-client id, runs the Google flow and answers
+ * with the ID token or the reason there is none. Null hides the Google button
+ * entirely. [googleResult] is the same answer arriving late, after an
+ * Activity recreation lost the callback; it is consumed once handled.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -78,11 +81,20 @@ fun StaffLoginScreen(
     onExit: () -> Unit,
     sessionError: String? = null,
     onDismissSessionError: () -> Unit = {},
-    onGoogleSignIn: ((clientId: String, onToken: (String) -> Unit) -> Unit)? = null,
+    onGoogleSignIn: ((clientId: String, onResult: (Result<String>) -> Unit) -> Unit)? = null,
+    googleResult: Result<String>? = null,
+    onConsumeGoogleResult: () -> Unit = {},
     viewModel: StaffLoginViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(googleResult) {
+        if (googleResult != null) {
+            viewModel.onGoogleResult(googleResult)
+            onConsumeGoogleResult()
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -243,7 +255,7 @@ fun StaffLoginScreen(
                 Spacer(modifier = Modifier.height(10.dp))
                 if (onGoogleSignIn != null) {
                     OutlinedButton(
-                        onClick = { onGoogleSignIn(googleClientId, viewModel::signInWithGoogle) },
+                        onClick = { onGoogleSignIn(googleClientId, viewModel::onGoogleResult) },
                         enabled = !state.isBusy,
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                     ) {

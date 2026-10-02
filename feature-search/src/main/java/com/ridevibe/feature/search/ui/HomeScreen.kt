@@ -116,6 +116,9 @@ fun HomeScreen(
     onProfileClick: () -> Unit,
     onExplore: (query: String, dateMillis: Long, returnDateMillis: Long?) -> Unit,
     onSearchRequest: ((SearchRequest) -> Unit)? = null,
+    onExploreWithParty: (
+        (query: String, dateMillis: Long, returnDateMillis: Long?, adults: Int, children: Int, infants: Int) -> Unit
+    )? = null,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val form by viewModel.formState.collectAsStateWithLifecycle()
@@ -222,7 +225,8 @@ fun HomeScreen(
             onDisplayResults = { query, dateMillis, returnDateMillis ->
                 showExploreSearch = false
                 viewModel.onExploreReset()
-                onExplore(query, dateMillis, returnDateMillis)
+                onExploreWithParty?.invoke(query, dateMillis, returnDateMillis, form.adults, form.children, form.infants)
+                    ?: onExplore(query, dateMillis, returnDateMillis)
             },
             onDismiss = {
                 showExploreSearch = false

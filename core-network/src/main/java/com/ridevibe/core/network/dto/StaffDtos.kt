@@ -266,12 +266,15 @@ data class AccountCredentialDto(
     val role: String? = null,
     val operatorId: Int? = null,
     val generatedPassword: String? = null,
+    // Reset only: how many of the account's other sessions the server signed out.
+    val revokedSessions: Int? = null,
 ) {
     fun toDomain() = AccountCredential(
         email = email,
         role = role?.let { it.toStaffRole() },
         operatorId = operatorId,
         generatedPassword = generatedPassword,
+        revokedSessions = revokedSessions,
     )
 }
 

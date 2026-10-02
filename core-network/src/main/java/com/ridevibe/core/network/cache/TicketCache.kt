@@ -39,20 +39,26 @@ class TicketCache @Inject constructor(
     fun lastFetchedAtEpochMillis(): Long? = store.get(KEY_FETCHED_AT)?.toLongOrNull()
 
     /** A full, successful `GET /v1/bookings` result. */
-    fun replaceAll(tickets: List<TicketDto>, fetchedAtEpochMillis: Long = System.currentTimeMillis()) {
+    fun replaceAll(tickets: List<TicketDto>, fetchedAtEpochMillis: Long = System.currentTimeMillis()) = synchronized(lock) {
         write(tickets)
         store.put(KEY_FETCHED_AT, fetchedAtEpochMillis.toString())
     }
 
-    /** A ticket fetched or issued on its own; replaces any cached copy with the same id. */
-    fun upsert(ticket: TicketDto) {
+    /**
+     * A ticket fetched or issued on its own; replaces any cached copy with the
+     * same id. Locked because a round trip loads both legs concurrently and an
+     * unguarded read-modify-write would drop whichever leg wrote first.
+     */
+    fun upsert(ticket: TicketDto) = synchronized(lock) {
         write(tickets().filterNot { it.id == ticket.id } + ticket)
     }
 
-    fun clear() {
+    fun clear() = synchronized(lock) {
         store.remove(KEY_TICKETS)
         store.remove(KEY_FETCHED_AT)
     }
+
+    private val lock = Any()
 
     private fun write(tickets: List<TicketDto>) {
         val kept = tickets

@@ -26,7 +26,7 @@ sealed interface QrRender {
 
 /**
  * Encodes ticket payloads as boarding-scanner QR bitmaps. Error correction M:
- * the payload is a signed token, so the extra density of level L is not worth
+ * the payload is an opaque server token, so the extra density of level L is not worth
  * losing scans to a scratched screen, and level H would push a long token past
  * what a phone-sized code reads reliably.
  */

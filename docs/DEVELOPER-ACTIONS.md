@@ -104,3 +104,50 @@ discount-ID camera capture + OCR, gallery import, ticket share / save to
 Photos / calendar, QR scan of a printed ticket, hold-expiry dialogs at 10
 minutes, WebSocket reconnect against the live backend, dark theme, tablet
 `NavigationRail`, API 24–25 devices.
+
+---
+
+## E. Follow-up audit, 2026-09-26 (after commit 50d6ee2)
+
+A second pass ran four bug reviewers over the branch, a checklist re-audit,
+and a read-only parity check against the backend repo. Fifteen verified bugs
+were fixed (round-trip hold-expiry loop, partial-failure escape, scanner never
+releasing the camera, idempotency-key rotation, WebSocket close code, ticket
+cache race, stale admin pages, silent staff Google failures, same-day Explore
+round trips, dead ticket Home button on deep links, mock selling unheld seats,
+double-tap over-select, Google-only session state, lenient PH dates, on-site
+sale seat ordering). Also done: offline fallback for the ticket screen,
+encrypted device id / passenger session / ticket cache, Explore carries the
+party from Home and completes round trips, staff spec re-synced from the
+backend (`revokedSessions` on password reset), pending-backend route names
+corrected.
+
+### Dashboard status
+- Endpoint parity is complete both ways: every backend route has an app call
+  and every app call has a route. The in-app console now covers everything
+  the two web dashboards do, plus refund filters, trip paging, partner search,
+  chosen passwords, on-site fare types, and manifest check-in that the web
+  dashboards lack. Web-dashboard parity work is therefore optional.
+- None of the seven items in `docs/api/PENDING-BACKEND.md` is implemented on
+  the backend yet. `clientReference` is dropped by the zod schema today (no
+  400), but retries still book twice until it is stored.
+- The backend working tree has uncommitted work (rate limits, security
+  headers, user ids instead of device ids, the whole `spec/staff-openapi.yaml`
+  and its contract test). Commit it there; the app already matches it.
+
+### Optional code work still open (none blocks a beta)
+- Carry primary email/mobile and the OCR'd ID number in the booking request
+  (needs the DTO + spec + backend column).
+- Passenger cancel/refund, fare/total on `Ticket`, promo reflected in quotes
+  (all need endpoints first).
+- Convention plugin (`build-logic`) to collapse the seven copied module
+  blocks; ktlint/detekt; dependency-update tooling; baseline profile.
+- ViewModel and MockStaffDatabase unit tests; compose-ui-test and hilt-testing.
+- Passenger-side adaptive layout; results price/class filters; Admin Data tab
+  search; Admin Trips auto-load on filter change.
+- Consolidate duplicated helpers (duration label, picker day bridge, QR
+  encoder, capacity rule 30/44, seat "as seen by me" mapping).
+- Seat-column base: staff spec says zero-based, the staff mock is 1-based;
+  settle it with the backend before a real seat grid is rendered from CRS data.
+- Cosmetic: Welcome copy still says "bus ticketing", hero image is a stock
+  stand-in, `Type.kt` variable-font fallback on API 24–25, `localeConfig`.

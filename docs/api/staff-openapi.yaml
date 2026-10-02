@@ -428,7 +428,9 @@ paths:
       summary: Set or generate a new password for an account
       description: |
         Body is optional (an absent body is treated as `{}`); omit `password`
-        to have one generated and returned once. Existing sessions survive.
+        to have one generated and returned once. Every other session of the
+        account is revoked; the caller's own session survives when an admin
+        resets their own password.
       security: [{ AdminToken: [] }, { Bearer: [] }]
       parameters:
         - $ref: "#/components/parameters/AccountId"
@@ -1430,9 +1432,10 @@ components:
 
     PasswordResetResponse:
       type: object
-      required: [email]
+      required: [email, revokedSessions]
       properties:
         email: { type: string, format: email }
+        revokedSessions: { type: integer, description: Sessions of the account signed out by the reset (the caller's own is kept). }
         generatedPassword: { type: string, description: Present only when `password` was omitted. }
 
     AdminBooking:

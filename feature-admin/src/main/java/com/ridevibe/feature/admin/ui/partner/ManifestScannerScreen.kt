@@ -60,6 +60,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -106,6 +108,11 @@ fun ManifestScannerScreen(
 
     BackHandler(onBack = onClose)
     LaunchedEffect(Unit) { if (!hasPermission && !asked) permissionLauncher.launch(Manifest.permission.CAMERA) }
+    // Coming back from Settings with the camera allowed must start the scanner without reopening it.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        if (hasPermission) deniedPermanently = false
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.inverseSurface)) {
         if (hasPermission) {
@@ -119,6 +126,7 @@ fun ManifestScannerScreen(
                         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)),
                     )
                 },
+                onClose = onClose,
                 modifier = Modifier.align(Alignment.Center).padding(24.dp),
             )
         }
@@ -192,6 +200,7 @@ private fun PermissionFallback(
     deniedPermanently: Boolean,
     onRequest: () -> Unit,
     onOpenSettings: () -> Unit,
+    onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface, modifier = modifier) {
@@ -216,7 +225,8 @@ private fun PermissionFallback(
                 Button(onClick = onRequest, modifier = Modifier.fillMaxWidth()) { Text("Allow camera", fontWeight = FontWeight.Bold) }
             }
             Spacer(modifier = Modifier.height(6.dp))
-            OutlinedButton(onClick = onRequest, enabled = !deniedPermanently, modifier = Modifier.fillMaxWidth()) {
+            // The way out without a camera: back to the list, where each row has "Mark boarded".
+            OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
                 Text("Use \"Mark boarded\" on the list instead")
             }
         }
@@ -226,7 +236,8 @@ private fun PermissionFallback(
 /**
  * CameraX preview bound to the composition's lifecycle with an ImageAnalysis
  * use case feeding ML Kit. Analysis runs on its own single thread; the
- * scanner and executor are released when the preview leaves composition.
+ * camera, scanner and executor are released when the preview leaves
+ * composition.
  */
 @Composable
 private fun QrCameraPreview(onScanned: (String) -> Unit, modifier: Modifier = Modifier) {
@@ -237,9 +248,13 @@ private fun QrCameraPreview(onScanned: (String) -> Unit, modifier: Modifier = Mo
         BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build())
     }
     val recent = remember { RecentScanFilter(REPEAT_SCAN_COOLDOWN_MS) }
+    val camera = remember { CameraBinding() }
 
     DisposableEffect(Unit) {
         onDispose {
+            // Unbind before closing the scanner: an analyzer still running against a closed
+            // ML Kit client would throw on the analysis thread.
+            camera.release()
             scanner.close()
             analysisExecutor.shutdown()
         }
@@ -252,6 +267,9 @@ private fun QrCameraPreview(onScanned: (String) -> Unit, modifier: Modifier = Mo
             val mainExecutor = ContextCompat.getMainExecutor(ctx)
             val providerFuture = ProcessCameraProvider.getInstance(ctx)
             providerFuture.addListener({
+                // The provider can answer after the scanner was closed (fast back press);
+                // binding then would hold the camera with nothing to release it.
+                if (camera.isReleased) return@addListener
                 val provider = providerFuture.get()
                 val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
                 val analysis = ImageAnalysis.Builder()
@@ -260,15 +278,41 @@ private fun QrCameraPreview(onScanned: (String) -> Unit, modifier: Modifier = Mo
                 analysis.setAnalyzer(analysisExecutor) { proxy ->
                     decodeQr(proxy, scanner) { payload ->
                         // ML Kit answers on its own thread; state changes belong on main.
-                        if (recent.accept(payload)) mainExecutor.execute { latestOnScanned(payload) }
+                        if (recent.accept(payload)) mainExecutor.execute { if (!camera.isReleased) latestOnScanned(payload) }
                     }
                 }
                 provider.unbindAll()
                 provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                camera.bound(provider, analysis)
             }, mainExecutor)
             previewView
         },
     )
+}
+
+/**
+ * What the provider future bound, kept so the composable can unbind it on
+ * dispose. Touched on the main thread only (the future's listener and
+ * `onDispose` both run there), so plain fields are enough.
+ */
+private class CameraBinding {
+    var isReleased = false
+        private set
+    private var provider: ProcessCameraProvider? = null
+    private var analysis: ImageAnalysis? = null
+
+    fun bound(provider: ProcessCameraProvider, analysis: ImageAnalysis) {
+        this.provider = provider
+        this.analysis = analysis
+    }
+
+    fun release() {
+        isReleased = true
+        analysis?.clearAnalyzer()
+        provider?.unbindAll()
+        analysis = null
+        provider = null
+    }
 }
 
 @androidx.annotation.OptIn(ExperimentalGetImage::class)

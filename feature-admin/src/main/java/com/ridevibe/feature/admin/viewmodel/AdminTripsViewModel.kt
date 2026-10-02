@@ -54,6 +54,7 @@ class AdminTripsViewModel @Inject constructor(
     private var sessionKey: String? = null
     private var debounceJob: Job? = null
     private var loadJob: Job? = null
+    private var loadMoreJob: Job? = null
 
     fun start(sessionKey: String) {
         if (this.sessionKey == sessionKey) return
@@ -101,9 +102,11 @@ class AdminTripsViewModel @Inject constructor(
     fun load() {
         debounceJob?.cancel()
         loadJob?.cancel()
+        // A page still in flight for the previous date or filters would otherwise land on the new list.
+        loadMoreJob?.cancel()
         val state = _uiState.value
         loadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            _uiState.update { it.copy(isLoading = true, isLoadingMore = false, error = null) }
             fetchPage(state, offset = 0)
                 .onSuccess { page ->
                     _uiState.update {
@@ -120,11 +123,14 @@ class AdminTripsViewModel @Inject constructor(
     fun loadMore() {
         val state = _uiState.value
         if (state.isLoading || state.isLoadingMore || !state.canLoadMore) return
-        viewModelScope.launch {
+        loadMoreJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoadingMore = true, error = null) }
             fetchPage(state, offset = state.trips.size)
                 .onSuccess { page ->
                     _uiState.update { current ->
+                        // load() cancels this job, but a filter typed during the request only
+                        // schedules a debounced reload: the answer is for the old query, drop it.
+                        if (!current.sameQueryAs(state)) return@update current.copy(isLoadingMore = false)
                         val known = current.trips.map { it.id }.toSet()
                         current.copy(
                             isLoadingMore = false,
@@ -138,6 +144,9 @@ class AdminTripsViewModel @Inject constructor(
                 }
         }
     }
+
+    private fun AdminTripsUiState.sameQueryAs(other: AdminTripsUiState): Boolean =
+        dateIso == other.dateIso && operatorFilter == other.operatorFilter && placeFilter == other.placeFilter
 
     private suspend fun fetchPage(state: AdminTripsUiState, offset: Int): Result<List<TripOccupancy>> =
         adminRepository.getTrips(

@@ -26,6 +26,13 @@ data class StaffSessionUiState(
      * [sessionKey] and drop the previous account's data when it changes.
      */
     val sessionEpoch: Int = 0,
+    /**
+     * A Google sign-in answer that arrived while no login screen was listening:
+     * the Activity was recreated under the account chooser, so the callback the
+     * screen handed the host app is gone. Held here until the login screen
+     * (re)composes and consumes it.
+     */
+    val googleResult: Result<String>? = null,
 ) {
     val sessionKey: String get() = "${session?.token.orEmpty()}#$sessionEpoch"
 }
@@ -84,18 +91,32 @@ class StaffSessionViewModel @Inject constructor(
         if (_uiState.value.session == null) return
         viewModelScope.launch {
             authRepository.signOut()
-            _uiState.update { it.copy(sessionEpoch = it.sessionEpoch + 1, error = SESSION_EXPIRED_MESSAGE) }
+            _uiState.update { it.copy(sessionEpoch = it.sessionEpoch + 1, error = SESSION_EXPIRED_MESSAGE, googleResult = null) }
         }
     }
 
     fun signOut() {
         viewModelScope.launch {
             authRepository.signOut()
-            _uiState.update { it.copy(sessionEpoch = it.sessionEpoch + 1, error = null) }
+            _uiState.update { it.copy(sessionEpoch = it.sessionEpoch + 1, error = null, googleResult = null) }
         }
     }
 
     fun consumeError() {
         _uiState.update { it.copy(error = null) }
+    }
+
+    /**
+     * Fallback delivery for the host app's Google flow: this view model is scoped
+     * to the console's nav entry, so it outlives an Activity recreation that the
+     * login screen's plain callback does not. State, not a one-shot flow, so the
+     * answer waits for the login screen however late it composes.
+     */
+    fun deliverGoogleResult(result: Result<String>) {
+        _uiState.update { it.copy(googleResult = result) }
+    }
+
+    fun consumeGoogleResult() {
+        _uiState.update { it.copy(googleResult = null) }
     }
 }

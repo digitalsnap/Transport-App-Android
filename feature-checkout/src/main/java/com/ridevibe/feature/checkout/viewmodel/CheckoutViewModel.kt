@@ -51,7 +51,9 @@ data class CoPassengerForm(
     val mobileError: String? get() = CheckoutValidation.mobileError(mobileNumber, required = false)
 
     /** A discount claim needs its photo on disk, not just a remembered path. */
-    val idCaptured: Boolean get() = !discountIdImagePath.isNullOrBlank() && File(discountIdImagePath).isFile
+    // Non-blank only: the VM verifies the file when captured/restored and again in confirmBooking();
+    // touching the filesystem from a state getter would run on every recomposition.
+    val idCaptured: Boolean get() = !discountIdImagePath.isNullOrBlank()
 
     /** What the fare is computed with: the discount only applies once the ID is captured. */
     val effectiveType: PassengerType get() = if (type.requiresIdCapture && !idCaptured) PassengerType.REGULAR else type
@@ -132,7 +134,7 @@ data class CheckoutUiState(
 
     val primaryFullName: String get() = "${primaryFirstName.trim()} ${primaryLastName.trim()}".trim()
     val primaryIdCaptured: Boolean
-        get() = !discountIdImagePath.isNullOrBlank() && File(discountIdImagePath).isFile
+        get() = !discountIdImagePath.isNullOrBlank()
     val primaryEffectiveType: PassengerType
         get() = if (requiresIdCapture && !primaryIdCaptured) PassengerType.REGULAR else passengerType
 
@@ -440,9 +442,11 @@ class CheckoutViewModel @Inject constructor(
 
     // ---- Payment ----------------------------------------------------------------------------
 
-    fun onPaymentMethodSelected(method: PaymentMethod) = updateForm { it.copy(paymentMethod = method) }
+    // Payment method and promo do not change who is booked, so the server may
+    // still dedupe a retry after a timed-out attempt (e.g. GCash → cash on board).
+    fun onPaymentMethodSelected(method: PaymentMethod) = updateForm(partyEdit = false) { it.copy(paymentMethod = method) }
 
-    fun onPromoCodeChanged(code: String) = updateForm { it.copy(promoCode = code) }
+    fun onPromoCodeChanged(code: String) = updateForm(partyEdit = false) { it.copy(promoCode = code) }
 
     /**
      * The pay button. Cash on board reserves straight away; the online methods
@@ -611,9 +615,13 @@ class CheckoutViewModel @Inject constructor(
      * keys — rotates them, since the party the server saw is no longer the
      * party being booked.
      */
-    private fun updateForm(transform: (CheckoutUiState) -> CheckoutUiState) {
+    private fun updateForm(partyEdit: Boolean = true, transform: (CheckoutUiState) -> CheckoutUiState) {
         _uiState.update(transform)
-        if (attemptedWithCurrentKeys && _uiState.value.partialFailure == null) rotateClientReferences()
+        val state = _uiState.value
+        // Never rotate while a request is in flight: its response must still match the key it carried.
+        if (partyEdit && attemptedWithCurrentKeys && !state.isSubmitting && state.partialFailure == null) {
+            rotateClientReferences()
+        }
         persistForm()
     }
 

@@ -50,8 +50,15 @@ class CheckoutRepositoryImpl @Inject constructor(
             .toDomain()
     }
 
-    override suspend fun getTicket(ticketId: String): Result<Ticket> =
-        passengerApiResult { apiService.getTicket(ticketId).also(ticketCache::upsert).toDomain() }
+    override suspend fun getTicket(ticketId: String): Result<Ticket> {
+        val live = passengerApiResult { apiService.getTicket(ticketId).also(ticketCache::upsert).toDomain() }
+        if (live.isSuccess) return live
+        // A boarding pass has to open at the terminal with no signal: serve the
+        // copy cached when it was issued or last listed, and only fail when
+        // there is none. Cancellations made since then surface on the next sync.
+        val cached = ticketCache.tickets().firstOrNull { it.id == ticketId } ?: return live
+        return Result.success(cached.toDomain())
+    }
 
     override suspend fun getMyBookings(): Result<List<Ticket>> = passengerApiResult {
         apiService.getMyBookings()

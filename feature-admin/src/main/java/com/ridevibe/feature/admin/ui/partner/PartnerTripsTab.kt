@@ -252,7 +252,7 @@ private fun TripSheet(
                 if (isBus) {
                     MicroLabel("Selected seats")
                     Spacer(modifier = Modifier.height(4.dp))
-                    SeatChips(state.pickedSeatLabels.sorted())
+                    SeatChips(state.pickedSeatsOrdered)
                 } else {
                     OutlinedTextField(
                         value = state.saleCountText,
@@ -271,6 +271,7 @@ private fun TripSheet(
                     label = { Text("Passenger name") },
                     placeholder = { Text("Walk-in passenger") },
                     singleLine = true,
+                    isError = state.saleNameTooLong,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 if (state.passengerCount > 0) {
@@ -283,7 +284,7 @@ private fun TripSheet(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 2.dp),
                         ) {
                             Text(
-                                if (isBus) state.pickedSeatLabels.sorted().getOrNull(index) ?: "#${index + 1}" else "#${index + 1}",
+                                if (isBus) state.pickedSeatsOrdered.getOrNull(index) ?: "#${index + 1}" else "#${index + 1}",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.padding(top = 10.dp, end = 4.dp),
@@ -307,7 +308,8 @@ private fun TripSheet(
                         Text(formatPhp(state.saleAmountPhp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
                 }
-                InlineError(state.saleError)
+                // The live contract check (limits from staff-openapi.yaml) outranks a stale server error.
+                InlineError(state.saleValidationError ?: state.saleError)
                 Spacer(modifier = Modifier.height(10.dp))
                 Button(
                     onClick = { showSaleConfirm = true },
@@ -324,7 +326,7 @@ private fun TripSheet(
         ConfirmDialog(
             title = "Record this sale?",
             text = "Sell ${state.passengerCount} ${trip.rideKind.spaceNoun(plural = state.passengerCount != 1)}" +
-                (if (isBus) " (${state.pickedSeatLabels.sorted().joinToString(", ")})" else "") +
+                (if (isBus) " (${state.pickedSeatsOrdered.joinToString(", ")})" else "") +
                 " on ${trip.origin} → ${trip.destination} at ${formatPhDateTime(trip.departureEpochMillis)} " +
                 "to ${state.saleName.trim().ifBlank { "a walk-in passenger" }} for ${formatPhp(state.saleAmountPhp)}? " +
                 "The ticket is issued as paid in cash and the seats leave the rider app immediately.",

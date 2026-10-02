@@ -106,6 +106,8 @@ data class AccountCredential(
     val role: StaffRole? = null,
     val operatorId: Int? = null,
     val generatedPassword: String? = null,
+    /** After a password reset: other sessions of the account the server revoked (null when not a reset). */
+    val revokedSessions: Int? = null,
 )
 
 data class PartnerTokenIssued(

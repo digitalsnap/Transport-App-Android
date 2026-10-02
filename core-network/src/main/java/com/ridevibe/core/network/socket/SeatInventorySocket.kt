@@ -70,8 +70,11 @@ class SeatInventorySocket @Inject constructor(
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 // OkHttp only reports onClosed once BOTH sides have sent a close
                 // frame; answering the server's close here is what lets the
-                // flow complete instead of hanging until the ping timeout.
-                webSocket.close(code, reason)
+                // flow complete instead of hanging until the ping timeout. A server
+                // that closes without a status is reported as 1005, which OkHttp
+                // refuses to send back, so reply with a normal close in that case.
+                val replyCode = if (code in 1000..1003 || code in 3000..4999) code else 1000
+                webSocket.close(replyCode, reason.take(MAX_CLOSE_REASON_LENGTH))
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -99,6 +102,8 @@ class SeatInventorySocket @Inject constructor(
     }
 
     private companion object {
+        /** RFC 6455 caps the close reason at 123 UTF-8 bytes. */
+        private const val MAX_CLOSE_REASON_LENGTH = 123
         const val NORMAL_CLOSURE_CODE = 1000
     }
 }

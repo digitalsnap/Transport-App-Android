@@ -7,6 +7,7 @@ import com.ridevibe.core.network.storage.CartStore
 import com.ridevibe.core.network.storage.EncryptedPrefsKeyValueStore
 import com.ridevibe.core.network.storage.IdentityStore
 import com.ridevibe.core.network.storage.KeyValueStore
+import com.ridevibe.core.network.storage.PassengerSessionPrefs
 import com.ridevibe.core.network.storage.SharedPreferencesKeyValueStore
 import com.ridevibe.core.network.storage.StaffSessionPrefs
 import com.ridevibe.core.network.storage.TicketCacheStore
@@ -26,11 +27,23 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object SessionModule {
 
+    /**
+     * Encrypted: X-Device-Id is a bearer credential on the passenger API. The
+     * file name changed with the move to encryption, so a device that had the
+     * plain file gets a fresh id (its mock-era bookings are not worth keeping).
+     */
     @Provides
     @Singleton
     @IdentityStore
     fun provideIdentityStore(@ApplicationContext context: Context): KeyValueStore =
-        SharedPreferencesKeyValueStore(context.getSharedPreferences("ridevibe_identity", Context.MODE_PRIVATE))
+        EncryptedPrefsKeyValueStore(context, "ridevibe_identity_v2")
+
+    /** Encrypted: holds the Google/Facebook tokens of the signed-in rider. */
+    @Provides
+    @Singleton
+    @PassengerSessionPrefs
+    fun providePassengerSessionStore(@ApplicationContext context: Context): KeyValueStore =
+        EncryptedPrefsKeyValueStore(context, "ridevibe_passenger_session_v2")
 
     /** Encrypted at rest: it holds a bearer credential for the staff console. */
     @Provides
@@ -45,11 +58,12 @@ object SessionModule {
     fun provideCartStore(@ApplicationContext context: Context): KeyValueStore =
         SharedPreferencesKeyValueStore(context.getSharedPreferences("ridevibe_cart", Context.MODE_PRIVATE))
 
+    /** Encrypted: cached tickets carry passenger names and scannable QR payloads. */
     @Provides
     @Singleton
     @TicketCacheStore
     fun provideTicketCacheStore(@ApplicationContext context: Context): KeyValueStore =
-        SharedPreferencesKeyValueStore(context.getSharedPreferences("ridevibe_ticket_cache", Context.MODE_PRIVATE))
+        EncryptedPrefsKeyValueStore(context, "ridevibe_ticket_cache_v2")
 
     @Provides
     @Singleton

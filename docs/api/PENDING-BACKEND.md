@@ -101,7 +101,7 @@ departure cannot see each other's check-ins, and a reinstall forgets them.
   `409` when already boarded (body: the existing entry), `404` when the
   ticket is not on that trip's manifest, `410` when the booking is cancelled.
 - `ManifestEntry` gains `boarded` / `boardedAtEpochMillis` so
-  `GET /partner/api/manifest` returns the marks and the "Boarded x / y" count
+  `GET /partner/api/bookings` (the manifest feed) returns the marks and the "Boarded x / y" count
   is server-truth. Optional but useful: `contactNumber` on the entry — the tab
   shows the booking id per row today because the model has no phone number.
 
@@ -109,7 +109,7 @@ When it lands: replace the store with the repository call, keep the local
 store only as an offline queue, and remove the `TODO(backend)` in
 `ManifestCheckInStore.kt`.
 
-## 7. `POST /partner/api/trips/{tripId}/onsite-sale` — QR payload and passenger types
+## 7. `POST /partner/api/trips/{id}/onsite` — QR payload and passenger types
 
 **File:** `docs/api/staff-openapi.yaml` (request, no spec edit made).
 Consumer: `PartnerTripsViewModel.recordOnsiteSale`.
