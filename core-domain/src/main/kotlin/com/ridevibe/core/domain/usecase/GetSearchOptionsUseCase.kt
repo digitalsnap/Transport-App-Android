@@ -9,6 +9,6 @@ import javax.inject.Inject
 class GetSearchOptionsUseCase @Inject constructor(
     private val tripRepository: TripRepository,
 ) {
-    suspend fun locations(): List<TerminalLocation> = tripRepository.getLocations()
-    suspend fun busClasses(): List<BusClass> = tripRepository.getAvailableBusClasses()
+    suspend fun locations(): Result<List<TerminalLocation>> = tripRepository.getLocations()
+    suspend fun busClasses(): Result<List<BusClass>> = tripRepository.getAvailableBusClasses()
 }

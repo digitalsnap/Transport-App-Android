@@ -30,9 +30,9 @@ interface TripRepository {
     /** Curated multi-leg tourist routes whose destination matches [query]. */
     suspend fun findJourneys(query: String): Result<List<Journey>>
 
-    /** Selectable origins/destinations, central terminals flagged. */
-    suspend fun getLocations(): List<TerminalLocation>
+    /** Selectable origins/destinations, central terminals flagged. Fails when offline — Home shows a retry. */
+    suspend fun getLocations(): Result<List<TerminalLocation>>
 
     /** Bus classes that actually exist in inventory — drives the filter chips. */
-    suspend fun getAvailableBusClasses(): List<BusClass>
+    suspend fun getAvailableBusClasses(): Result<List<BusClass>>
 }

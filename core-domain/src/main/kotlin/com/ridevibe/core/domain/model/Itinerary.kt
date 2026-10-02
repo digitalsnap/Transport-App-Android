@@ -10,6 +10,10 @@ data class Itinerary(
     val startDateMillis: Long,
     val doneLegIndices: Set<Int> = emptySet(),
 ) {
+    /** Only indices that name a real leg count — a stale index from an edited journey must not. */
     val completedCount: Int get() = doneLegIndices.count { it in journey.legs.indices }
-    val isComplete: Boolean get() = completedCount == journey.legs.size
+
+    /** Every leg ticked, and at least one leg to tick — an empty journey is never "complete". */
+    val isComplete: Boolean
+        get() = journey.legs.isNotEmpty() && completedCount == journey.legs.size
 }

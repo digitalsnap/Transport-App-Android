@@ -1,7 +1,6 @@
 package com.ridevibe.core.network.dto
 
 import com.ridevibe.core.domain.model.Seat
-import com.ridevibe.core.domain.model.SeatStatus
 import com.ridevibe.core.domain.model.SeatStatusEvent
 import kotlinx.serialization.Serializable
 
@@ -13,14 +12,18 @@ data class SeatDto(
     val column: Int,
     val status: String,
     val lockedByUserId: String? = null,
+    /** Present on a held seat when the server tracks hold expiry (see openapi.yaml `Seat`). */
+    val lockExpiresAtEpochMillis: Long? = null,
 ) {
+    // Unknown status → OCCUPIED: a seat we cannot read must never be sold twice.
     fun toDomain() = Seat(
         id = id,
         label = label,
         row = row,
         column = column,
-        status = status.toSeatStatus(),
+        status = status.toSeatStatusLenient(),
         lockedByUserId = lockedByUserId,
+        lockExpiresAtEpochMillis = lockExpiresAtEpochMillis,
     )
 }
 
@@ -40,15 +43,20 @@ data class SeatStatusEventDto(
     fun toDomain() = SeatStatusEvent(
         tripId = tripId,
         seatId = seatId,
-        status = status.toSeatStatus(),
+        status = status.toSeatStatusLenient(),
         lockedByUserId = lockedByUserId,
         lockExpiresAtEpochMillis = lockExpiresAtEpochMillis,
     )
 }
 
-private fun String.toSeatStatus(): SeatStatus = when (uppercase()) {
-    "LOCKED" -> SeatStatus.LOCKED
-    "OCCUPIED" -> SeatStatus.OCCUPIED
-    "SELECTED" -> SeatStatus.SELECTED
-    else -> SeatStatus.AVAILABLE
-}
+/**
+ * Optional body of `POST /v1/trips/{tripId}/seats/{seatId}/lock` (200). Every
+ * field is optional: a 204 with no body is equally valid and means "held,
+ * assume the documented 10-minute TTL".
+ */
+@Serializable
+data class SeatLockResponseDto(
+    val seatId: String? = null,
+    val lockedByUserId: String? = null,
+    val lockExpiresAtEpochMillis: Long? = null,
+)

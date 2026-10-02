@@ -6,6 +6,8 @@ import com.ridevibe.core.network.dto.LocationDto
 import com.ridevibe.core.network.dto.SeatDto
 import com.ridevibe.core.network.dto.TicketDto
 import com.ridevibe.core.network.dto.TripDto
+import okhttp3.ResponseBody
+import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -52,8 +54,13 @@ interface CrsApiService {
     @GET("v1/trips/{tripId}/seatmap")
     suspend fun getSeatMap(@Path("tripId") tripId: String): List<SeatDto>
 
+    /**
+     * The raw response is kept because the server may answer 204 (no body) or
+     * 200 with a `SeatLockResponse` carrying the hold expiry — see
+     * `docs/api/openapi.yaml`; SeatRepositoryImpl parses whichever it gets.
+     */
     @POST("v1/trips/{tripId}/seats/{seatId}/lock")
-    suspend fun lockSeat(@Path("tripId") tripId: String, @Path("seatId") seatId: String)
+    suspend fun lockSeat(@Path("tripId") tripId: String, @Path("seatId") seatId: String): Response<ResponseBody>
 
     @POST("v1/trips/{tripId}/seats/{seatId}/release")
     suspend fun releaseSeat(@Path("tripId") tripId: String, @Path("seatId") seatId: String)

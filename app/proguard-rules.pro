@@ -49,7 +49,7 @@
 -keep,allowobfuscation,allowshrinking class retrofit2.Response
 
 # ── ZXing ────────────────────────────────────────────────────────────────────
--keep class com.google.zxing.** { *; }
+-dontwarn com.google.zxing.**
 
 # ── ML Kit (rules mostly ship with the AAR; silence transitive warnings) ─────
 -dontwarn com.google.mlkit.**

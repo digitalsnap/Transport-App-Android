@@ -5,12 +5,12 @@ import com.ridevibe.core.domain.model.CoPassenger
 import com.ridevibe.core.domain.model.Itinerary
 import com.ridevibe.core.domain.model.Journey
 import com.ridevibe.core.domain.model.Passenger
-import com.ridevibe.core.domain.model.TerminalLocation
 import com.ridevibe.core.domain.model.PaymentMethod
 import com.ridevibe.core.domain.model.Seat
 import com.ridevibe.core.domain.model.SeatStatus
 import com.ridevibe.core.domain.model.SeatStatusEvent
 import com.ridevibe.core.domain.model.SupportMessage
+import com.ridevibe.core.domain.model.TerminalLocation
 import com.ridevibe.core.domain.model.Ticket
 import com.ridevibe.core.domain.model.Trip
 import com.ridevibe.core.domain.model.UserProfile
@@ -23,22 +23,50 @@ import com.ridevibe.core.domain.repository.SeatRepository
 import com.ridevibe.core.domain.repository.SupportRepository
 import com.ridevibe.core.domain.repository.TripRepository
 import com.ridevibe.core.domain.repository.WalletRepository
-import java.util.UUID
+import com.ridevibe.core.network.api.CrsApiException
+import com.ridevibe.core.network.api.apiResult
+import com.ridevibe.core.network.cache.TicketCache
+import com.ridevibe.core.network.dto.TicketDto
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.withContext
+import java.util.UUID
 import kotlin.random.Random
 import javax.inject.Inject
 import javax.inject.Singleton
 
 // MOCK DATA LAYER — DELETE BEFORE GOING LIVE (see MockDatabase.kt).
+//
+// Every method does its work off the main thread (Dispatchers.Default), like
+// a real network call, and every refusal is a CrsApiException with the code
+// and message the CRS would send — so the screens behave identically against
+// either backend.
 
 /** Simulated network latency so loading states are visible, like a real API. */
 private const val FAKE_LATENCY_MS = 500L
 
-private const val CURRENT_USER_ID = "me"
+/** A mock "server call": off the main thread, with latency, refusals shaped as the CRS would. */
+private suspend fun <T> mockCall(latencyMs: Long = FAKE_LATENCY_MS, block: () -> T): Result<T> =
+    withContext(Dispatchers.Default) {
+        apiResult {
+            delay(latencyMs)
+            block()
+        }
+    }
+
+/** For the mock-only repositories whose interfaces have no Result: still off the main thread. */
+private suspend fun <T> mockWork(latencyMs: Long = 0L, block: () -> T): T =
+    withContext(Dispatchers.Default) {
+        if (latencyMs > 0) delay(latencyMs)
+        block()
+    }
+
+private fun refuse(code: Int, message: String): Nothing = throw CrsApiException(code, message)
 
 @Singleton
 class MockTripRepository @Inject constructor(
@@ -50,32 +78,25 @@ class MockTripRepository @Inject constructor(
         destination: String,
         departureDateEpochMillis: Long,
         busClass: BusClass?,
-    ): Result<List<Trip>> {
-        delay(FAKE_LATENCY_MS)
-        return Result.success(db.searchTrips(origin, destination, departureDateEpochMillis, busClass))
-    }
+    ): Result<List<Trip>> = mockCall { db.searchTrips(origin, destination, departureDateEpochMillis, busClass) }
 
-    override suspend fun getTrip(tripId: String): Result<Trip> {
-        delay(FAKE_LATENCY_MS / 2)
-        return db.getTrip(tripId)?.let { Result.success(it) }
-            ?: Result.failure(IllegalStateException("Trip not found: $tripId"))
-    }
+    override suspend fun getTrip(tripId: String): Result<Trip> =
+        mockCall(FAKE_LATENCY_MS / 2) { db.getTrip(tripId) ?: refuse(404, "Trip not found") }
 
     override suspend fun searchRelated(
         query: String,
         departureDateEpochMillis: Long,
         returnDateEpochMillis: Long?,
-    ): Result<List<Trip>> {
-        delay(FAKE_LATENCY_MS)
-        return Result.success(db.searchRelated(query, departureDateEpochMillis, returnDateEpochMillis))
-    }
+    ): Result<List<Trip>> = mockCall { db.searchRelated(query, departureDateEpochMillis, returnDateEpochMillis) }
 
     override suspend fun findJourneys(query: String): Result<List<Journey>> =
-        Result.success(db.journeys(query))
+        mockCall(latencyMs = 0L) { db.journeys(query) }
 
-    override suspend fun getLocations(): List<TerminalLocation> = db.locations()
+    override suspend fun getLocations(): Result<List<TerminalLocation>> =
+        mockCall(latencyMs = 0L) { db.locations() }
 
-    override suspend fun getAvailableBusClasses(): List<BusClass> = db.availableBusClasses()
+    override suspend fun getAvailableBusClasses(): Result<List<BusClass>> =
+        mockCall(latencyMs = 0L) { db.availableBusClasses() }
 }
 
 @Singleton
@@ -83,9 +104,10 @@ class MockSeatRepository @Inject constructor(
     private val db: MockDatabase,
 ) : SeatRepository {
 
-    override suspend fun getSeatMap(tripId: String): List<Seat> {
-        delay(FAKE_LATENCY_MS)
-        return db.seatMap(tripId)
+    /** Empty for ferries and fastcrafts: passage has no seat map. */
+    override suspend fun getSeatMap(tripId: String): Result<List<Seat>> = mockCall {
+        db.getTrip(tripId) ?: refuse(404, "Trip not found")
+        db.seatMap(tripId).map { it.asSeenByMe() }
     }
 
     /**
@@ -96,51 +118,77 @@ class MockSeatRepository @Inject constructor(
     override fun observeSeatEvents(tripId: String): Flow<SeatStatusEvent> = merge(
         db.seatEvents.filter { it.tripId == tripId },
         simulatedOtherPassenger(tripId),
-    )
+    ).map { it.asSeenByMe() }
+
+    // Same rule as SeatRepositoryImpl: a lock held by this user is shown as
+    // SELECTED, so the seat map recognises its own holds on reload.
+    private fun Seat.asSeenByMe(): Seat =
+        if (status == SeatStatus.LOCKED && lockedByUserId == MOCK_CURRENT_USER_ID) copy(status = SeatStatus.SELECTED) else this
+
+    private fun SeatStatusEvent.asSeenByMe(): SeatStatusEvent =
+        if (status == SeatStatus.LOCKED && lockedByUserId == MOCK_CURRENT_USER_ID) copy(status = SeatStatus.SELECTED) else this
 
     private fun simulatedOtherPassenger(tripId: String): Flow<SeatStatusEvent> = flow {
         while (true) {
             delay(15_000)
             val target = db.availableSeats(tripId).randomOrNull(Random) ?: continue
-            db.updateSeat(tripId, target.id, SeatStatus.LOCKED, lockedBy = "other-passenger")
+            db.updateSeat(
+                tripId,
+                target.id,
+                SeatStatus.LOCKED,
+                lockedBy = MOCK_OTHER_PASSENGER_ID,
+                lockExpiresAt = System.currentTimeMillis() + MOCK_HOLD_TTL_MS,
+            )
             delay(8_000)
             // Give the seat back unless someone (the demo passenger) took it meanwhile.
             val stillLockedByOther = db.seatMap(tripId)
-                .firstOrNull { it.id == target.id }?.lockedByUserId == "other-passenger"
+                .firstOrNull { it.id == target.id }?.lockedByUserId == MOCK_OTHER_PASSENGER_ID
             if (stillLockedByOther) {
                 db.updateSeat(tripId, target.id, SeatStatus.AVAILABLE, lockedBy = null)
             }
         }
     }
 
-    override suspend fun lockSeat(tripId: String, seatId: String): Result<Unit> {
-        delay(FAKE_LATENCY_MS / 2)
-        val seat = db.seatMap(tripId).firstOrNull { it.id == seatId }
-            ?: return Result.failure(IllegalArgumentException("Unknown seat $seatId"))
-        if (seat.status == SeatStatus.OCCUPIED || seat.lockedByUserId == "other-passenger") {
-            return Result.failure(IllegalStateException("Seat $seatId is no longer available"))
+    /** Holds the seat for the server TTL and returns the expiry, like a `200 SeatLockResponse`. */
+    override suspend fun lockSeat(tripId: String, seatId: String): Result<Long?> = mockCall(FAKE_LATENCY_MS / 2) {
+        val trip = db.getTrip(tripId) ?: refuse(404, "Trip not found")
+        if (trip.rideKind.sellsPassage) refuse(409, "This sailing sells passage, not seats")
+        val seat = db.seatMap(tripId).firstOrNull { it.id == seatId } ?: refuse(404, "Seat not found")
+        if (seat.status == SeatStatus.OCCUPIED) refuse(409, "Seat ${seat.label} is already sold")
+        if (seat.status == SeatStatus.LOCKED && seat.lockedByUserId != MOCK_CURRENT_USER_ID) {
+            refuse(409, "Seat ${seat.label} is held by another passenger")
         }
-        db.updateSeat(tripId, seatId, SeatStatus.LOCKED, lockedBy = CURRENT_USER_ID)
-        return Result.success(Unit)
+        val heldByMe = db.seatMap(tripId).count { it.status == SeatStatus.LOCKED && it.lockedByUserId == MOCK_CURRENT_USER_ID }
+        if (heldByMe >= MAX_ACTIVE_HOLDS && seat.lockedByUserId != MOCK_CURRENT_USER_ID) {
+            refuse(409, "Too many active holds (max $MAX_ACTIVE_HOLDS)")
+        }
+        val expiresAt = System.currentTimeMillis() + MOCK_HOLD_TTL_MS
+        db.updateSeat(tripId, seatId, SeatStatus.LOCKED, lockedBy = MOCK_CURRENT_USER_ID, lockExpiresAt = expiresAt)
+        expiresAt
     }
 
-    override suspend fun releaseSeat(tripId: String, seatId: String): Result<Unit> {
+    override suspend fun releaseSeat(tripId: String, seatId: String): Result<Unit> = mockCall(latencyMs = 0L) {
         // Only release a seat this user is holding. Guards against ever
         // flipping an OCCUPIED (paid) seat or another passenger's lock back
         // to AVAILABLE — e.g. when a ViewModel cleans up after booking.
         val seat = db.seatMap(tripId).firstOrNull { it.id == seatId }
-        if (seat?.status == SeatStatus.LOCKED && seat.lockedByUserId == CURRENT_USER_ID) {
+        if (seat?.status == SeatStatus.LOCKED && seat.lockedByUserId == MOCK_CURRENT_USER_ID) {
             db.updateSeat(tripId, seatId, SeatStatus.AVAILABLE, lockedBy = null)
         }
-        return Result.success(Unit)
     }
 
     override suspend fun disconnect(tripId: String) = Unit // nothing to close in-memory
+
+    private companion object {
+        /** The CRS's per-user active-hold cap (openapi.yaml `x-rate-limits`). */
+        const val MAX_ACTIVE_HOLDS = 12
+    }
 }
 
 @Singleton
 class MockCheckoutRepository @Inject constructor(
     private val db: MockDatabase,
+    private val ticketCache: TicketCache,
 ) : CheckoutRepository {
 
     override suspend fun confirmBooking(
@@ -151,23 +199,25 @@ class MockCheckoutRepository @Inject constructor(
         infantCount: Int,
         paymentMethod: PaymentMethod,
         promoCode: String?,
-    ): Result<Ticket> {
-        delay(FAKE_LATENCY_MS)
-        return db.createTicket(tripId, seatIds, primaryPassenger, coPassengers, infantCount, paymentMethod)
-            ?.let { Result.success(it) }
-            ?: Result.failure(IllegalStateException("Trip not found: $tripId"))
+        clientReference: String,
+    ): Result<Ticket> = mockCall {
+        db.createTicket(tripId, seatIds, primaryPassenger, coPassengers, infantCount, paymentMethod, clientReference)
+            .also { ticketCache.upsert(TicketDto.from(it)) }
     }
 
-    override suspend fun getTicket(ticketId: String): Result<Ticket> {
-        delay(FAKE_LATENCY_MS / 2)
-        return db.getTicket(ticketId)?.let { Result.success(it) }
-            ?: Result.failure(IllegalStateException("Ticket not found: $ticketId"))
+    override suspend fun getTicket(ticketId: String): Result<Ticket> = mockCall(FAKE_LATENCY_MS / 2) {
+        (db.getTicket(ticketId) ?: refuse(404, "Ticket not found"))
+            .also { ticketCache.upsert(TicketDto.from(it)) }
     }
 
-    override suspend fun getMyBookings(): List<Ticket> {
-        delay(FAKE_LATENCY_MS / 2)
-        return db.allTickets()
+    // Writes through to the same cache as the real client, so the offline
+    // My Bookings path is demoable on mocks too.
+    override suspend fun getMyBookings(): Result<List<Ticket>> = mockCall(FAKE_LATENCY_MS / 2) {
+        db.allTickets().also { tickets -> ticketCache.replaceAll(tickets.map { TicketDto.from(it) }) }
     }
+
+    override fun cachedBookings(): List<Ticket> =
+        ticketCache.tickets().map { it.toDomain() }.sortedByDescending { it.trip.departureEpochMillis }
 }
 
 @Singleton
@@ -175,27 +225,20 @@ class MockProfileRepository @Inject constructor(
     private val db: MockDatabase,
 ) : ProfileRepository {
 
-    override suspend fun getProfile(): UserProfile = db.getProfile()
+    override suspend fun getProfile(): UserProfile = mockWork { db.getProfile() }
 
-    override suspend fun saveProfile(profile: UserProfile): Result<Unit> {
-        db.saveProfile(profile)
-        return Result.success(Unit)
-    }
+    override suspend fun saveProfile(profile: UserProfile): Result<Unit> = mockCall(latencyMs = 0L) { db.saveProfile(profile) }
 
-    override suspend fun getVehicles(): List<Vehicle> = db.getVehicles()
+    override suspend fun getVehicles(): List<Vehicle> = mockWork { db.getVehicles() }
 
-    override suspend fun addVehicle(plateNumber: String, ltoCertificateUri: String): Result<Vehicle> {
-        if (plateNumber.isBlank()) return Result.failure(IllegalArgumentException("Plate number is required"))
-        if (ltoCertificateUri.isBlank()) {
-            return Result.failure(IllegalArgumentException("LTO Certificate of Registration is required"))
+    override suspend fun addVehicle(plateNumber: String, ltoCertificateUri: String): Result<Vehicle> =
+        mockCall(latencyMs = 0L) {
+            if (plateNumber.isBlank()) refuse(400, "Plate number is required")
+            if (ltoCertificateUri.isBlank()) refuse(400, "LTO Certificate of Registration is required")
+            db.addVehicle(plateNumber, ltoCertificateUri)
         }
-        return Result.success(db.addVehicle(plateNumber, ltoCertificateUri))
-    }
 
-    override suspend fun removeVehicle(vehicleId: String): Result<Unit> {
-        db.removeVehicle(vehicleId)
-        return Result.success(Unit)
-    }
+    override suspend fun removeVehicle(vehicleId: String): Result<Unit> = mockCall(latencyMs = 0L) { db.removeVehicle(vehicleId) }
 }
 
 @Singleton
@@ -203,15 +246,15 @@ class MockItineraryRepository @Inject constructor(
     private val db: MockDatabase,
 ) : ItineraryRepository {
 
-    override suspend fun getItineraries(): List<Itinerary> = db.itineraries()
+    override suspend fun getItineraries(): List<Itinerary> = mockWork { db.itineraries() }
 
     override suspend fun addItinerary(journey: Journey, startDateMillis: Long): Itinerary =
-        db.addItinerary(journey, startDateMillis)
+        mockWork { db.addItinerary(journey, startDateMillis) }
 
     override suspend fun setLegDone(itineraryId: String, legIndex: Int, done: Boolean) =
-        db.setLegDone(itineraryId, legIndex, done)
+        mockWork { db.setLegDone(itineraryId, legIndex, done) }
 
-    override suspend fun removeItinerary(itineraryId: String) = db.removeItinerary(itineraryId)
+    override suspend fun removeItinerary(itineraryId: String) = mockWork { db.removeItinerary(itineraryId) }
 }
 
 @Singleton
@@ -219,9 +262,8 @@ class MockWalletRepository @Inject constructor(
     private val db: MockDatabase,
 ) : WalletRepository {
 
-    override suspend fun getWallet(): Wallet {
-        delay(FAKE_LATENCY_MS / 2)
-        return Wallet(balancePhp = db.walletBalancePhp(), transactions = db.walletTransactions())
+    override suspend fun getWallet(): Wallet = mockWork(FAKE_LATENCY_MS / 2) {
+        Wallet(balancePhp = db.walletBalancePhp(), transactions = db.walletTransactions())
     }
 }
 
@@ -237,9 +279,9 @@ class MockSupportRepository @Inject constructor(
     )
     private var replyIndex = 0
 
-    override suspend fun getMessages(): List<SupportMessage> = db.supportMessages()
+    override suspend fun getMessages(): List<SupportMessage> = mockWork { db.supportMessages() }
 
-    override suspend fun sendMessage(text: String): List<SupportMessage> {
+    override suspend fun sendMessage(text: String): List<SupportMessage> = withContext(Dispatchers.Default) {
         db.addSupportMessage(
             SupportMessage(
                 id = UUID.randomUUID().toString(),
@@ -258,6 +300,6 @@ class MockSupportRepository @Inject constructor(
                 timestampEpochMillis = System.currentTimeMillis(),
             ),
         )
-        return db.supportMessages()
+        db.supportMessages()
     }
 }

@@ -6,21 +6,30 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,75 +39,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ridevibe.app.ui.theme.charcoalTopBarColors
-import com.ridevibe.core.domain.model.SupportMessage
-import com.ridevibe.core.domain.repository.SupportRepository
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-
-data class ChatUiState(
-    val messages: List<SupportMessage> = emptyList(),
-    val draft: String = "",
-    val isSending: Boolean = false,
-)
-
-// SupportRepository is injected directly (no use-case layer): send/receive
-// passthroughs only. Screen + VM share a file until the feature grows.
-@HiltViewModel
-class ChatViewModel @Inject constructor(
-    private val supportRepository: SupportRepository,
-    savedStateHandle: SavedStateHandle,
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(ChatUiState())
-    val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            _uiState.update { it.copy(messages = supportRepository.getMessages()) }
-            // Arriving from triage: open the thread with the chosen topic and
-            // booking attached so the agent has context up front.
-            val topic = savedStateHandle.get<String>("topic").orEmpty()
-            val bookingLabel = savedStateHandle.get<String>("booking").orEmpty()
-            if (topic.isNotBlank()) {
-                val intro = buildString {
-                    append("Topic: ").append(topic)
-                    if (bookingLabel.isNotBlank()) append(" • Booking ").append(bookingLabel)
-                }
-                _uiState.update { it.copy(isSending = true) }
-                val updated = supportRepository.sendMessage(intro)
-                _uiState.update { it.copy(isSending = false, messages = updated) }
-            }
-        }
-    }
-
-    fun onDraftChanged(value: String) = _uiState.update { it.copy(draft = value) }
-
-    fun send() {
-        val text = _uiState.value.draft.trim()
-        if (text.isEmpty() || _uiState.value.isSending) return
-        viewModelScope.launch {
-            _uiState.update { it.copy(isSending = true, draft = "") }
-            val updated = supportRepository.sendMessage(text)
-            _uiState.update { it.copy(isSending = false, messages = updated) }
-        }
-    }
-}
+import com.ridevibe.core.domain.format.PhTime
 
 /** Support chat. Backed by a simulated agent until the real channel exists. */
 @Composable
@@ -107,11 +58,14 @@ fun ChatScreen(
     onProfileClick: () -> Unit,
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
 
-    LaunchedEffect(uiState.messages.size) {
-        if (uiState.messages.isNotEmpty()) listState.animateScrollToItem(uiState.messages.size - 1)
+    // One list entry per message plus a separator whenever the PH calendar day changes.
+    val rows = uiState.messages.toRows()
+
+    LaunchedEffect(rows.size, uiState.isSending) {
+        if (rows.isNotEmpty()) listState.animateScrollToItem(rows.size - 1 + if (uiState.isSending) 1 else 0)
     }
 
     Scaffold(
@@ -121,7 +75,7 @@ fun ChatScreen(
                 title = { Text("Support", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to home")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to support topics")
                     }
                 },
                 actions = {
@@ -134,8 +88,14 @@ fun ChatScreen(
         },
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
+                // No app bottom nav on this route, so the composer clears the
+                // navigation bar itself; union with the IME so the keyboard case
+                // pads once, not twice.
                 Row(
-                    modifier = Modifier.fillMaxWidth().imePadding().padding(horizontal = 16.dp, vertical = 10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     OutlinedTextField(
@@ -145,9 +105,14 @@ fun ChatScreen(
                         shape = RoundedCornerShape(24.dp),
                         modifier = Modifier.weight(1f),
                         maxLines = 3,
+                        enabled = uiState.error == null,
                     )
                     Spacer(modifier = Modifier.size(8.dp))
-                    IconButton(onClick = viewModel::send, enabled = uiState.draft.isNotBlank() && !uiState.isSending) {
+                    IconButton(
+                        onClick = viewModel::send,
+                        enabled = uiState.draft.isNotBlank() && !uiState.isSending && uiState.error == null,
+                        modifier = Modifier.testTag("chat_send"),
+                    ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Send",
@@ -158,34 +123,119 @@ fun ChatScreen(
             }
         },
     ) { padding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(uiState.messages, key = { it.id }) { message ->
-                MessageBubble(message)
+        when {
+            uiState.isLoading -> Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator() }
+
+            uiState.error != null -> Column(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(uiState.error.orEmpty(), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(onClick = viewModel::load) { Text("Retry", fontWeight = FontWeight.Bold) }
             }
-            if (uiState.isSending) {
-                item {
-                    Text(
-                        "Support is typing…",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 8.dp, top = 4.dp),
-                    )
+
+            rows.isEmpty() && !uiState.isSending -> Column(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Chat,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(64.dp),
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Start the conversation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "Tell us what happened and we'll reply here as soon as an agent is free.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            else -> LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                rows.forEach { row ->
+                    when (row) {
+                        is ChatRow.DaySeparator -> item(key = "day-${row.isoDay}") { DaySeparator(row.label) }
+                        is ChatRow.Message -> item(key = row.message.id) {
+                            MessageBubble(row.message, onRetry = { viewModel.retry(row.message.id) })
+                        }
+                    }
+                }
+                if (uiState.isSending) {
+                    item(key = "typing") {
+                        Text(
+                            "Support is typing…",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 8.dp, top = 4.dp),
+                        )
+                    }
                 }
             }
         }
     }
 }
 
+private sealed interface ChatRow {
+    data class DaySeparator(val isoDay: String, val label: String) : ChatRow
+    data class Message(val message: ChatMessage) : ChatRow
+}
+
+/** Interleaves a day label ("Today", "Yesterday", "Tue, Sep 22") before the first message of each PH day. */
+private fun List<ChatMessage>.toRows(): List<ChatRow> {
+    val today = PhTime.todayIso()
+    val yesterday = PhTime.plusDays(today, -1)
+    val rows = mutableListOf<ChatRow>()
+    var lastDay: String? = null
+    forEach { message ->
+        val day = PhTime.isoDate(message.timestampEpochMillis)
+        if (day != lastDay) {
+            val label = when (day) {
+                today -> "Today"
+                yesterday -> "Yesterday"
+                else -> PhTime.formatIsoDay(day, "EEE, MMM d")
+            }
+            rows += ChatRow.DaySeparator(day, label)
+            lastDay = day
+        }
+        rows += ChatRow.Message(message)
+    }
+    return rows
+}
+
 @Composable
-private fun MessageBubble(message: SupportMessage) {
-    Box(
+private fun DaySeparator(label: String) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surfaceVariant) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MessageBubble(message: ChatMessage, onRetry: () -> Unit) {
+    val failed = message.status == MessageStatus.FAILED
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        contentAlignment = if (message.fromUser) Alignment.CenterEnd else Alignment.CenterStart,
+        horizontalAlignment = if (message.fromUser) Alignment.End else Alignment.Start,
     ) {
         Surface(
             shape = RoundedCornerShape(
@@ -194,21 +244,39 @@ private fun MessageBubble(message: SupportMessage) {
                 bottomStart = if (message.fromUser) 18.dp else 4.dp,
                 bottomEnd = if (message.fromUser) 4.dp else 18.dp,
             ),
-            color = if (message.fromUser) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.surface
+            color = when {
+                failed -> MaterialTheme.colorScheme.errorContainer
+                message.fromUser -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.surface
             },
         ) {
             Text(
                 message.text,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (message.fromUser) {
-                    MaterialTheme.colorScheme.onPrimary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
+                color = when {
+                    failed -> MaterialTheme.colorScheme.onErrorContainer
+                    message.fromUser -> MaterialTheme.colorScheme.onPrimary
+                    else -> MaterialTheme.colorScheme.onSurface
                 },
                 modifier = Modifier.widthIn(max = 300.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        }
+        val caption = when (message.status) {
+            MessageStatus.SENDING -> "Sending…"
+            MessageStatus.FAILED -> "Not sent"
+            MessageStatus.SENT -> PhTime.formatDateTime(message.timestampEpochMillis, "h:mm a")
+        }
+        Text(
+            caption,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+        if (failed) {
+            AssistChip(
+                onClick = onRetry,
+                label = { Text("Retry") },
+                leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp)) },
             )
         }
     }

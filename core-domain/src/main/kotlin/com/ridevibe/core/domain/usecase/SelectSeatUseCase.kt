@@ -3,11 +3,15 @@ package com.ridevibe.core.domain.usecase
 import com.ridevibe.core.domain.repository.SeatRepository
 import javax.inject.Inject
 
-/** Requests a hold on a seat; the server is the source of truth for the lock duration. */
+/**
+ * Requests a hold on a seat; the server is the source of truth for the lock
+ * duration. The value is the hold expiry (epoch millis) when the server
+ * returned one, null when it did not.
+ */
 class SelectSeatUseCase @Inject constructor(
     private val seatRepository: SeatRepository,
 ) {
-    suspend operator fun invoke(tripId: String, seatId: String): Result<Unit> =
+    suspend operator fun invoke(tripId: String, seatId: String): Result<Long?> =
         seatRepository.lockSeat(tripId, seatId)
 }
 

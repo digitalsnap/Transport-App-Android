@@ -1,5 +1,7 @@
 package com.ridevibe.core.network.mock
 
+import com.ridevibe.core.domain.format.PhTime
+import com.ridevibe.core.domain.model.BookingStatus
 import com.ridevibe.core.domain.model.BusClass
 import com.ridevibe.core.domain.model.CoPassenger
 import com.ridevibe.core.domain.model.Itinerary
@@ -7,6 +9,7 @@ import com.ridevibe.core.domain.model.Journey
 import com.ridevibe.core.domain.model.JourneyLeg
 import com.ridevibe.core.domain.model.LocationKind
 import com.ridevibe.core.domain.model.Passenger
+import com.ridevibe.core.domain.model.PassengerType
 import com.ridevibe.core.domain.model.PaymentMethod
 import com.ridevibe.core.domain.model.PaymentStatus
 import com.ridevibe.core.domain.model.RideKind
@@ -20,6 +23,7 @@ import com.ridevibe.core.domain.model.Trip
 import com.ridevibe.core.domain.model.UserProfile
 import com.ridevibe.core.domain.model.Vehicle
 import com.ridevibe.core.domain.model.WalletTransaction
+import com.ridevibe.core.network.api.CrsApiException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -37,6 +41,15 @@ import javax.inject.Singleton
 // sites/aggregators (Victory Liner, Genesis/JoyBus, DLTB, JAM, Partas,
 // Five Star, Solid North, Isarog). Real pricing must come from the CRS.
 // ═════════════════════════════════════════════════════════════════════════════
+
+/** The demo passenger's user id — what the CRS would echo in `X-User-Id`. */
+internal const val MOCK_CURRENT_USER_ID = "me"
+
+/** The simulated competing passenger who holds and releases seats. */
+internal const val MOCK_OTHER_PASSENGER_ID = "other-passenger"
+
+/** Server-side hold TTL the mock mirrors (see openapi.yaml `hold-ttl`). */
+internal const val MOCK_HOLD_TTL_MS = 10 * 60_000L
 
 @Singleton
 class MockDatabase @Inject constructor() {
@@ -623,7 +636,15 @@ class MockDatabase @Inject constructor() {
     internal val allBusRoutes by lazy { mergeRoutes(routeServices, xlsxBusRoutes) }
     internal val allSeaRoutes by lazy { mergeRoutes(seaRouteServices, xlsxSeaRoutes) }
 
-    /** Fallback services so ANY searched route still returns demo inventory. */
+    /**
+     * Demo inventory for the corridors Home's hot deals advertise ("Boracay via
+     * Batangas", "Tagaytay Weekender", "Baguio Night Trip" — HomeScreen.kt)
+     * when a rider types a spelling the corpus has no route for, e.g.
+     * "Manila → Boracay". Every other unknown pair returns an empty list, like
+     * the real CRS, so the "no trips found" state is reachable in the demo.
+     */
+    private val demoFallbackDestinations = setOf("boracay", "tagaytay", "baguio")
+
     private val fallbackServices = listOf(
         RouteService("Genesis Transport", BusClass.LUXURY, 850.0, 4.8, listOf(6, 14), 285),
         RouteService("Victory Liner", BusClass.DELUXE, 620.0, 4.5, listOf(8, 16), 345),
@@ -634,14 +655,22 @@ class MockDatabase @Inject constructor() {
 
     private val trips = ConcurrentHashMap<String, Trip>()
     private val seatMaps = ConcurrentHashMap<String, MutableList<Seat>>()
+
+    /** Ferries and fastcrafts sell passage, not seats: free spaces per sailing. */
+    private val seaSpacesRemaining = ConcurrentHashMap<String, Int>()
     private val tickets = ConcurrentHashMap<String, Ticket>()
     private var profile: UserProfile = UserProfile()
     private val vehicles = ConcurrentHashMap<String, Vehicle>()
     private val walletTransactions = mutableListOf<WalletTransaction>()
     private val supportMessages = mutableListOf<SupportMessage>()
 
-    /** Live seat updates, mimicking the WebSocket `seat_status_changed` channel. */
-    val seatEvents = MutableSharedFlow<SeatStatusEvent>(extraBufferCapacity = 32)
+    /**
+     * Live seat updates, mimicking the WebSocket `seat_status_changed` channel.
+     * Buffered generously: a booking of 12 seats plus the simulated passenger
+     * can burst well past 32 events before a slow collector catches up, and
+     * tryEmit must never drop one — the seat map would show a stale seat.
+     */
+    val seatEvents = MutableSharedFlow<SeatStatusEvent>(extraBufferCapacity = 256)
 
     init {
         seedPastBookings()
@@ -664,58 +693,115 @@ class MockDatabase @Inject constructor() {
         )
     }
 
-    /** Two completed sample bookings so the history section has demo content. */
+    /**
+     * Completed sample bookings so the history section has demo content and
+     * every ticket shape is on screen somewhere: two regular bus fares, a
+     * student discount, a senior citizen on a ferry passage, and a fare paid
+     * to the conductor (cash on board).
+     */
     private fun seedPastBookings() {
         val now = System.currentTimeMillis()
 
-        val baguioTrip = Trip(
-            id = "TRIP-PAST-BAGUIO",
-            operatorName = "Victory Liner",
-            origin = "Cubao",
-            destination = "Baguio",
-            departureEpochMillis = now - 14L * 86_400_000L,
-            arrivalEpochMillis = now - 14L * 86_400_000L + 360 * 60_000L,
-            busClass = BusClass.ORDINARY,
-            farePhp = 485.0,
-            availableSeatCount = 0,
-            operatorRating = 4.5,
-        )
-        trips[baguioTrip.id] = baguioTrip
+        fun pastTrip(
+            id: String,
+            operatorName: String,
+            origin: String,
+            destination: String,
+            daysAgo: Long,
+            durationMinutes: Long,
+            busClass: BusClass,
+            farePhp: Double,
+            rating: Double,
+            rideKind: RideKind = RideKind.BUS,
+        ): Trip {
+            val departure = now - daysAgo * 86_400_000L
+            return Trip(
+                id = id,
+                operatorName = operatorName,
+                origin = origin,
+                destination = destination,
+                departureEpochMillis = departure,
+                arrivalEpochMillis = departure + durationMinutes * 60_000L,
+                busClass = busClass,
+                farePhp = farePhp,
+                availableSeatCount = 0,
+                operatorRating = rating,
+                rideKind = rideKind,
+            ).also { trips[it.id] = it }
+        }
+
+        val baguioTrip = pastTrip("TRIP-PAST-BAGUIO", "Victory Liner", "Cubao", "Baguio", 14, 360, BusClass.ORDINARY, 485.0, 4.5)
         tickets["RV-HIST0001"] = Ticket(
             id = "RV-HIST0001",
             trip = baguioTrip,
             seatLabels = listOf("8C"),
-            primaryPassenger = Passenger(fullName = "Juan Dela Cruz", type = com.ridevibe.core.domain.model.PassengerType.REGULAR),
+            primaryPassenger = Passenger(fullName = "Juan Dela Cruz", type = PassengerType.REGULAR),
             paymentStatus = PaymentStatus.PAID,
             qrPayload = "RIDEVIBE|RV-HIST0001|${baguioTrip.id}|8C|Juan Dela Cruz(R)|PAID",
         )
 
-        val batangasTrip = Trip(
-            id = "TRIP-PAST-BATANGAS",
-            operatorName = "JAM Liner",
-            origin = "PITX",
-            destination = "Batangas Port",
-            departureEpochMillis = now - 32L * 86_400_000L,
-            arrivalEpochMillis = now - 32L * 86_400_000L + 150 * 60_000L,
-            busClass = BusClass.ORDINARY,
-            farePhp = 230.0,
-            availableSeatCount = 0,
-            operatorRating = 4.2,
-        )
-        trips[batangasTrip.id] = batangasTrip
+        val batangasTrip = pastTrip("TRIP-PAST-BATANGAS", "JAM Liner", "PITX", "Batangas Port", 32, 150, BusClass.ORDINARY, 230.0, 4.2)
         tickets["RV-HIST0002"] = Ticket(
             id = "RV-HIST0002",
             trip = batangasTrip,
             seatLabels = listOf("3C", "3D"),
-            primaryPassenger = Passenger(fullName = "Juan Dela Cruz", type = com.ridevibe.core.domain.model.PassengerType.REGULAR),
+            primaryPassenger = Passenger(fullName = "Juan Dela Cruz", type = PassengerType.REGULAR),
             coPassengers = listOf(CoPassenger(firstName = "Maria", lastName = "Dela Cruz")),
             paymentStatus = PaymentStatus.PAID,
             qrPayload = "RIDEVIBE|RV-HIST0002|${batangasTrip.id}|3C+3D|Juan Dela Cruz(R)+Maria Dela Cruz(R)|PAID",
         )
+
+        // Student fare: the discount ID photo was captured at checkout (device-local path).
+        val nagaTrip = pastTrip("TRIP-PAST-NAGA", "Isarog Elite", "PITX", "Naga", 21, 510, BusClass.DELUXE, 1150.0, 4.6)
+        tickets["RV-HIST0003"] = Ticket(
+            id = "RV-HIST0003",
+            trip = nagaTrip,
+            seatLabels = listOf("5A"),
+            primaryPassenger = Passenger(
+                fullName = "Juan Dela Cruz",
+                type = PassengerType.STUDENT,
+                discountIdImagePath = "discount-ids/RV-HIST0003-primary.jpg",
+            ),
+            paymentStatus = PaymentStatus.PAID,
+            qrPayload = "RIDEVIBE|RV-HIST0003|${nagaTrip.id}|5A|Juan Dela Cruz(ST)|PAID",
+        )
+
+        // Sea passage: spaces P1/P2, no seat map; senior citizen travelling with a companion.
+        val calapanTrip = pastTrip(
+            "TRIP-PAST-CALAPAN", "Montenegro Lines", "Batangas Port", "Calapan", 9, 150,
+            BusClass.ORDINARY, 400.0, 4.2, rideKind = RideKind.FERRY,
+        )
+        tickets["RV-HIST0004"] = Ticket(
+            id = "RV-HIST0004",
+            trip = calapanTrip,
+            seatLabels = listOf("P1", "P2"),
+            primaryPassenger = Passenger(
+                fullName = "Juan Dela Cruz",
+                type = PassengerType.SENIOR_CITIZEN,
+                discountIdImagePath = "discount-ids/RV-HIST0004-primary.jpg",
+            ),
+            coPassengers = listOf(CoPassenger(firstName = "Maria", lastName = "Dela Cruz")),
+            paymentStatus = PaymentStatus.PAID,
+            qrPayload = "RIDEVIBE|RV-HIST0004|${calapanTrip.id}|P1+P2|Juan Dela Cruz(SR)+Maria Dela Cruz(R)|PAID",
+        )
+
+        // Cash on board: the conductor collected the fare; the reservation window no longer applies.
+        val dagupanTrip = pastTrip("TRIP-PAST-DAGUPAN", "Five Star", "Cubao", "Dagupan", 5, 270, BusClass.ORDINARY, 585.0, 4.4)
+        tickets["RV-HIST0005"] = Ticket(
+            id = "RV-HIST0005",
+            trip = dagupanTrip,
+            seatLabels = listOf("11B"),
+            primaryPassenger = Passenger(fullName = "Juan Dela Cruz", type = PassengerType.REGULAR),
+            paymentStatus = PaymentStatus.CASH_ON_BOARD,
+            qrPayload = "RIDEVIBE|RV-HIST0005|${dagupanTrip.id}|11B|Juan Dela Cruz(R)|CASH_ON_BOARD",
+            reservationExpiresAtEpochMillis = null,
+        )
     }
 
-    fun allTickets(): List<Ticket> =
-        tickets.values.sortedByDescending { it.trip.departureEpochMillis }
+    fun allTickets(): List<Ticket> {
+        sweepExpiredReservations()
+        return tickets.values.sortedByDescending { it.trip.departureEpochMillis }
+    }
 
     // ── Reference data ──────────────────────────────────────────────────────
 
@@ -730,18 +816,25 @@ class MockDatabase @Inject constructor() {
         return hubs.sortedByDescending { it.isCentralTerminal } + routeCities
     }
 
+    /** Classes that exist anywhere in the merged corpus (curated + workbook, land + sea). */
     fun availableBusClasses(): List<BusClass> =
-        routeServices.values.flatten().map { it.busClass }.distinct().sorted()
+        (allBusRoutes.values + allSeaRoutes.values).flatten().map { it.busClass }.distinct().sorted()
 
     // ── Trips ───────────────────────────────────────────────────────────────
 
     fun searchTrips(origin: String, destination: String, dateMillis: Long, busClass: BusClass?): List<Trip> {
+        sweepExpiredReservations()
         val key = normalize(origin) to normalize(destination)
         fun Map<Pair<String, String>, List<RouteService>>.lookup() = entries
             .firstOrNull { (route, _) -> normalize(route.first) == key.first && normalize(route.second) == key.second }
             ?.value
-        // Land corridors first, then sea lanes; unknown pairs get demo inventory.
-        val services = allBusRoutes.lookup() ?: allSeaRoutes.lookup() ?: fallbackServices
+        // Land corridors first, then sea lanes. An unknown pair returns nothing,
+        // like the real CRS — unless it is one of the advertised demo corridors.
+        val isDemoCorridor = key.toList().any { endpoint -> demoFallbackDestinations.any { endpoint.contains(it) } }
+        val services = allBusRoutes.lookup()
+            ?: allSeaRoutes.lookup()
+            ?: fallbackServices.takeIf { isDemoCorridor }
+            ?: emptyList()
 
         return services
             .filter { busClass == null || it.busClass == busClass }
@@ -806,7 +899,9 @@ class MockDatabase @Inject constructor() {
         dateMillis: Long,
         service: RouteService,
     ): List<Trip> {
-        val dayStart = dateMillis - (dateMillis % 86_400_000L)
+        // Philippine calendar day, not the UTC day: the search date arrives as PH
+        // start-of-day (16:00 UTC the day before), and departure hours are PH hours.
+        val dayStart = PhTime.startOfDay(dateMillis)
         return service.departureHours.map { hour ->
             val departure = dayStart + hour * 3_600_000L
             // Class and fare are part of the identity: one operator can run several
@@ -815,7 +910,7 @@ class MockDatabase @Inject constructor() {
                 (origin + destination + service.operatorName + service.busClass.name +
                     service.farePhp + departure).hashCode().toUInt()
             }"
-            val trip = Trip(
+            val skeleton = Trip(
                 id = id,
                 operatorName = service.operatorName,
                 origin = origin,
@@ -824,10 +919,13 @@ class MockDatabase @Inject constructor() {
                 arrivalEpochMillis = departure + service.durationMinutes * 60_000L,
                 busClass = service.busClass,
                 farePhp = service.farePhp,
-                availableSeatCount = seatMap(id).count { it.status == SeatStatus.AVAILABLE },
+                availableSeatCount = 0,
                 operatorRating = service.rating,
                 rideKind = service.kind,
             )
+            // The seat map (or sea capacity) needs the trip's kind and class first.
+            trips.putIfAbsent(id, skeleton)
+            val trip = skeleton.copy(availableSeatCount = availableSpaceCount(skeleton))
             trips[id] = trip
             trip
         }
@@ -839,40 +937,134 @@ class MockDatabase @Inject constructor() {
 
     // ── Seats ───────────────────────────────────────────────────────────────
 
-    /** 10 rows × (A,B | aisle | C,D); occupancy seeded by tripId so it's stable. */
-    fun seatMap(tripId: String): List<Seat> = seatMaps.getOrPut(tripId) {
-        val random = Random(tripId.hashCode())
-        val columnsToLetters = listOf(1 to "A", 2 to "B", 3 to "C", 4 to "D")
-        (1..10).flatMap { row ->
-            columnsToLetters.map { (column, letter) ->
+    /** Same rule as MockStaffDatabase.Service.capacity, so rider and operator agree on every trip. */
+    private fun capacityOf(trip: Trip): Int = if (trip.busClass == BusClass.LUXURY) 30 else 44
+
+    /** Roughly every 6th trip is sold out and every 9th nearly full, so those screens are reachable. */
+    private enum class Fill { NORMAL, NEARLY_FULL, SOLD_OUT }
+
+    private fun fillOf(tripId: String): Fill {
+        val bucket = (tripId.hashCode().toLong() and 0x7fffffffL) % 18
+        return when {
+            bucket % 6 == 0L -> Fill.SOLD_OUT // 0, 6, 12 → 3 in 18
+            bucket % 9 == 4L -> Fill.NEARLY_FULL // 4, 13 → 2 in 18
+            else -> Fill.NORMAL
+        }
+    }
+
+    /**
+     * Bus seat map: ORDINARY/DELUXE are 2+2 × 11 rows (44 seats), LUXURY is
+     * 2+1 × 10 rows (30). Sea services sell passage, not seats — they have NO
+     * seat map (empty list) and their availability is a capacity counter, see
+     * [availableSpaceCount]. Occupancy is seeded by tripId so it is stable.
+     */
+    fun seatMap(tripId: String): List<Seat> {
+        val trip = trips[tripId] ?: return emptyList()
+        if (trip.rideKind.sellsPassage) return emptyList()
+        val seats = seatMaps.getOrPut(tripId) { buildSeatMap(trip) }
+        sweepExpiredHolds(tripId, seats)
+        return seats
+    }
+
+    /**
+     * The real CRS sweeps lapsed holds on read; without this the mock keeps a
+     * seat LOCKED forever after the UI has already told the rider the hold
+     * expired, and seeded competitor holds would never free up.
+     */
+    private fun sweepExpiredHolds(tripId: String, seats: MutableList<Seat>) {
+        val now = System.currentTimeMillis()
+        val lapsed = synchronized(seats) {
+            seats.filter { it.status == SeatStatus.LOCKED && (it.lockExpiresAtEpochMillis ?: Long.MAX_VALUE) <= now }
+        }
+        lapsed.forEach { updateSeat(tripId, it.id, SeatStatus.AVAILABLE, lockedBy = null) }
+    }
+
+    private fun buildSeatMap(trip: Trip): MutableList<Seat> {
+        val random = Random(trip.id.hashCode())
+        val letters = if (trip.busClass == BusClass.LUXURY) listOf("A", "B", "C") else listOf("A", "B", "C", "D")
+        val rows = capacityOf(trip) / letters.size
+        val fill = fillOf(trip.id)
+        val holdExpiry = System.currentTimeMillis() + MOCK_HOLD_TTL_MS / 2
+        val seats = (1..rows).flatMap { row ->
+            letters.mapIndexed { index, letter ->
                 val roll = random.nextFloat()
+                val status = when {
+                    fill == Fill.SOLD_OUT -> SeatStatus.OCCUPIED
+                    roll < 0.25f -> SeatStatus.OCCUPIED
+                    roll < 0.30f -> SeatStatus.LOCKED
+                    else -> SeatStatus.AVAILABLE
+                }
                 Seat(
                     id = "$row$letter",
                     label = "$row$letter",
                     row = row,
-                    column = column,
-                    status = when {
-                        roll < 0.25f -> SeatStatus.OCCUPIED
-                        roll < 0.30f -> SeatStatus.LOCKED
-                        else -> SeatStatus.AVAILABLE
-                    },
-                    lockedByUserId = if (roll in 0.25f..0.30f) "other-passenger" else null,
+                    column = index + 1,
+                    status = status,
+                    lockedByUserId = if (status == SeatStatus.LOCKED) MOCK_OTHER_PASSENGER_ID else null,
+                    lockExpiresAtEpochMillis = if (status == SeatStatus.LOCKED) holdExpiry else null,
                 )
             }
         }.toMutableList()
+        if (fill == Fill.NEARLY_FULL) {
+            // Everything sold except the last two free seats at the back.
+            val keepFree = seats.withIndex()
+                .filter { it.value.status == SeatStatus.AVAILABLE }
+                .takeLast(2)
+                .map { it.index }
+                .toSet()
+            for (i in seats.indices) {
+                if (i !in keepFree && seats[i].status != SeatStatus.OCCUPIED) {
+                    seats[i] = seats[i].copy(status = SeatStatus.OCCUPIED, lockedByUserId = null, lockExpiresAtEpochMillis = null)
+                }
+            }
+        }
+        return seats
     }
 
-    fun updateSeat(tripId: String, seatId: String, status: SeatStatus, lockedBy: String?): Boolean {
+    /** Free seats on a bus, or free spaces on a sailing. */
+    fun availableSpaceCount(trip: Trip): Int =
+        if (trip.rideKind.sellsPassage) {
+            seaSpacesRemaining.getOrPut(trip.id) { seedSeaSpaces(trip) }
+        } else {
+            seatMap(trip.id).count { it.status == SeatStatus.AVAILABLE }
+        }
+
+    private fun seedSeaSpaces(trip: Trip): Int = when (fillOf(trip.id)) {
+        Fill.SOLD_OUT -> 0
+        Fill.NEARLY_FULL -> 2
+        Fill.NORMAL -> {
+            val capacity = capacityOf(trip)
+            capacity - (capacity * (0.15f + Random(trip.id.hashCode()).nextFloat() * 0.5f)).toInt()
+        }
+    }
+
+    fun updateSeat(
+        tripId: String,
+        seatId: String,
+        status: SeatStatus,
+        lockedBy: String?,
+        lockExpiresAt: Long? = null,
+    ): Boolean {
         val seats = seatMaps[tripId] ?: return false
         // Synchronized: the simulated "other passenger" coroutine and UI
         // actions can mutate the same seat list from different dispatchers.
         synchronized(seats) {
             val index = seats.indexOfFirst { it.id == seatId }
             if (index == -1) return false
-            seats[index] = seats[index].copy(status = status, lockedByUserId = lockedBy)
+            seats[index] = seats[index].copy(
+                status = status,
+                lockedByUserId = lockedBy,
+                lockExpiresAtEpochMillis = lockExpiresAt.takeIf { status == SeatStatus.LOCKED || status == SeatStatus.SELECTED },
+            )
         }
         seatEvents.tryEmit(
-            SeatStatusEvent(tripId = tripId, seatId = seatId, status = status, lockedByUserId = lockedBy),
+            SeatStatusEvent(
+                tripId = tripId,
+                seatId = seatId,
+                status = status,
+                lockedByUserId = lockedBy,
+                lockExpiresAtEpochMillis = lockExpiresAt,
+            ),
         )
         return true
     }
@@ -882,6 +1074,11 @@ class MockDatabase @Inject constructor() {
 
     // ── Tickets ─────────────────────────────────────────────────────────────
 
+    /**
+     * Issues a ticket the way `POST /v1/trips/{tripId}/book` would, throwing
+     * [CrsApiException] with the server's codes on refusal. [clientReference]
+     * makes it idempotent: a retry with the same key returns the same ticket.
+     */
     fun createTicket(
         tripId: String,
         seatIds: List<String>,
@@ -889,20 +1086,40 @@ class MockDatabase @Inject constructor() {
         coPassengers: List<CoPassenger>,
         infantCount: Int,
         paymentMethod: PaymentMethod,
-    ): Ticket? {
-        val trip = trips[tripId] ?: return null
-        val seatLabels = seatIds.map { seatId ->
-            seatMaps[tripId]?.firstOrNull { it.id == seatId }?.label ?: seatId
+        clientReference: String? = null,
+    ): Ticket {
+        sweepExpiredReservations()
+        clientReference?.let { key -> tickets.values.firstOrNull { it.clientReference == key }?.let { return it } }
+        val trip = trips[tripId] ?: throw CrsApiException(404, "Trip not found")
+        if (seatIds.isEmpty()) throw CrsApiException(409, "No seats are held for this booking")
+
+        val seatLabels: List<String> = if (trip.rideKind.sellsPassage) {
+            // Passage: one space per passenger, allocated at the port — only the count matters.
+            val remaining = availableSpaceCount(trip)
+            if (remaining < seatIds.size) throw CrsApiException(409, "Only $remaining space(s) left on this sailing")
+            seaSpacesRemaining[tripId] = remaining - seatIds.size
+            seatIds
+        } else {
+            val seats = seatMap(tripId)
+            val picked = seatIds.map { id -> seats.firstOrNull { it.id == id } ?: throw CrsApiException(404, "Seat $id not found") }
+            // Same rule as the server: a seat can only be booked while THIS rider
+            // holds it. An AVAILABLE seat means the hold lapsed or was never taken.
+            val lost = picked.firstOrNull {
+                it.status != SeatStatus.LOCKED || it.lockedByUserId != MOCK_CURRENT_USER_ID
+            }
+            if (lost != null) throw CrsApiException(409, "Seat ${lost.label} is no longer held by you")
+            picked.map { it.label }
         }
+
         val ticketId = "RV-${UUID.randomUUID().toString().take(8).uppercase()}"
         val status = paymentMethod.paymentStatus
 
         // One QR carrying the whole manifest: seats, every passenger + fare type, status.
-        fun typeTag(type: com.ridevibe.core.domain.model.PassengerType) = when (type) {
-            com.ridevibe.core.domain.model.PassengerType.REGULAR -> "R"
-            com.ridevibe.core.domain.model.PassengerType.STUDENT -> "ST"
-            com.ridevibe.core.domain.model.PassengerType.SENIOR_CITIZEN -> "SR"
-            com.ridevibe.core.domain.model.PassengerType.PWD -> "PWD"
+        fun typeTag(type: PassengerType) = when (type) {
+            PassengerType.REGULAR -> "R"
+            PassengerType.STUDENT -> "ST"
+            PassengerType.SENIOR_CITIZEN -> "SR"
+            PassengerType.PWD -> "PWD"
         }
         val manifest = buildString {
             append("RIDEVIBE|").append(ticketId).append('|').append(tripId)
@@ -930,9 +1147,11 @@ class MockDatabase @Inject constructor() {
             } else {
                 null
             },
+            status = BookingStatus.CONFIRMED,
+            clientReference = clientReference,
         )
         tickets[ticketId] = ticket
-        seatIds.forEach { updateSeat(tripId, it, SeatStatus.OCCUPIED, lockedBy = null) }
+        if (!trip.rideKind.sellsPassage) seatIds.forEach { updateSeat(tripId, it, SeatStatus.OCCUPIED, lockedBy = null) }
 
         // Record the payment in the wallet history (per-passenger discounts applied).
         val discountTotal = trip.farePhp * primaryPassenger.type.discountRate +
@@ -949,7 +1168,55 @@ class MockDatabase @Inject constructor() {
         return ticket
     }
 
-    fun getTicket(ticketId: String): Ticket? = tickets[ticketId]
+    fun getTicket(ticketId: String): Ticket? {
+        sweepExpiredReservations()
+        return tickets[ticketId]
+    }
+
+    /**
+     * Support console actions (cancel, refund) land on the rider's ticket too.
+     * Leaving CONFIRMED puts the seats or spaces back on sale.
+     */
+    fun setTicketStatus(ticketId: String, status: BookingStatus): Boolean {
+        val ticket = tickets[ticketId] ?: return false
+        if (ticket.status == status) return true
+        tickets[ticketId] = ticket.copy(
+            status = status,
+            reservationExpiresAtEpochMillis = ticket.reservationExpiresAtEpochMillis.takeIf { status == BookingStatus.CONFIRMED },
+        )
+        if (ticket.status == BookingStatus.CONFIRMED && status != BookingStatus.CONFIRMED) releaseSpaces(ticket)
+        return true
+    }
+
+    /**
+     * Unpaid cash-on-board reservations lapse: the seats go back on sale and
+     * the ticket reads CANCELLED, exactly as the CRS sweep would do. Runs on
+     * every read so the demo never shows a lapsed reservation as valid.
+     */
+    fun sweepExpiredReservations(nowEpochMillis: Long = System.currentTimeMillis()) {
+        tickets.values
+            .filter {
+                it.status == BookingStatus.CONFIRMED &&
+                    it.paymentStatus == PaymentStatus.CASH_ON_BOARD &&
+                    (it.reservationExpiresAtEpochMillis ?: Long.MAX_VALUE) < nowEpochMillis
+            }
+            .forEach { setTicketStatus(it.id, BookingStatus.CANCELLED) }
+    }
+
+    private fun releaseSpaces(ticket: Ticket) {
+        val trip = ticket.trip
+        if (trip.rideKind.sellsPassage) {
+            seaSpacesRemaining[trip.id]?.let { remaining ->
+                seaSpacesRemaining[trip.id] = minOf(capacityOf(trip), remaining + ticket.seatLabels.size)
+            }
+            return
+        }
+        ticket.seatLabels.forEach { label ->
+            seatMaps[trip.id]?.firstOrNull { it.label == label }?.let { seat ->
+                updateSeat(trip.id, seat.id, SeatStatus.AVAILABLE, lockedBy = null)
+            }
+        }
+    }
 
     // ── Profile & vehicles ──────────────────────────────────────────────────
 

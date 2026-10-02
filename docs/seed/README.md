@@ -16,7 +16,7 @@ if the mock changes and this isn't regenerated, the diff shows up in review.
 | File | Records |
 |---|---|
 | `terminals.json` | 45 hubs — 17 Metro Manila & Luzon, 14 Visayas, 14 Mindanao |
-| `routes.json` | 388 directed routes (288 land, 100 sea), 696 services, 73 operators |
+| `routes.json` | 388 directed routes (288 land, 100 sea), 692 services, 72 operators |
 | `journeys.json` | 4 curated multi-leg journeys, 7 legs |
 
 ## Notes for whoever builds the backend schema

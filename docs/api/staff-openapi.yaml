@@ -1,0 +1,1838 @@
+openapi: 3.0.3
+
+info:
+  title: RideVibe CRS Staff API
+  version: 0.1.0
+  description: |
+    The **staff contract**: sign-in (`/auth/*`), the admin console API
+    (`/admin/api/*`) and the partner/operator API (`/partner/api/*`). It is
+    consumed by two clients that must agree on every field:
+
+    - the web dashboards served from `admin/dashboard.html` and
+      `admin/partner.html`, and
+    - the Android app's built-in staff console (`StaffApiService` in
+      `core-network`).
+
+    `spec/openapi.yaml` remains the **passenger** contract (`/v1/*` and the
+    seat-events WebSocket) and is unaffected by this file. The two specs are
+    locked by two contract tests: `test/contract.spec.ts` (passenger) and
+    `test/staff-contract.spec.ts` (this file) — every operation here must be
+    implemented, and no `/auth`, `/admin/api` or `/partner/api` route may exist
+    that this file does not describe. The two HTML shells (`GET /admin`,
+    `GET /partner`) are not API operations and are listed under `x-ui-shells`.
+
+    This spec is derived directly from `src/routes/auth.ts`, `src/routes/admin.ts`
+    and `src/routes/partner.ts`. Request bodies and query strings are validated
+    with zod; a failed validation replies `400 { message }` carrying the first
+    issue's message. Every error body on this surface has the shape
+    `{ "message": string }` (see `ErrorResponse`).
+
+    **Money.** Every `*Php` field is a JSON number in **pesos**, converted from
+    `fare_minor` (centavos, BIGINT) in exactly one place, `src/money.ts`.
+    Request-side `farePhp` must be representable in centavos (at most two
+    decimals); an amount that is not fails the conversion and surfaces as 500.
+
+    **Time.** `*EpochMillis` fields are UTC epoch milliseconds. `date` query
+    and body fields are `YYYY-MM-DD` and are interpreted as **Philippine
+    calendar days** (Asia/Manila, UTC+8, no DST); `time` is `HH:MM` PH wall
+    time.
+
+servers:
+  - url: http://localhost:8080
+    description: Local dev (also a physical device with `adb reverse tcp:8080 tcp:8080`)
+  - url: http://10.0.2.2:8080
+    description: Local dev, as seen from the Android emulator
+
+tags:
+  - name: Auth
+    description: Dashboard / staff-console sign-in shared by admins and partners
+  - name: Admin
+    description: Admin console — requires an ADMIN credential
+  - name: Admin accounts
+    description: Dashboard sign-in provisioning
+  - name: Admin support
+    description: Booking support console (cancel, refund bookkeeping, QR reissue)
+  - name: Partner
+    description: Operator portal — partner credential, or admin read-only view
+
+security: []
+
+paths:
+
+  # ---------------------------------------------------------------- /auth ----
+
+  /auth/config:
+    get:
+      tags: [Auth]
+      operationId: getAuthConfig
+      summary: What the sign-in screen can offer
+      description: |
+        Unauthenticated. `googleEnabled` follows `GOOGLE_CLIENT_ID`;
+        `emailKeyEnabled` is true when `SMTP_URL` is set **or** `NODE_ENV` is
+        not `production` (dev flow — the key is echoed back to the caller).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthConfig" }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Email + password sign-in
+      description: |
+        Issues a 7-day session token (`s_…`). Rate limited — see `x-rate-limits`
+        (`auth`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: "`Wrong email or password` (also for accounts without a password)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/email-code:
+    post:
+      tags: [Auth]
+      operationId: requestEmailCode
+      summary: Email a one-time 6-digit sign-in key
+      description: |
+        Always answers `sent: true` with the same message whether or not the
+        email has an account (no enumeration). The key lives 10 minutes and
+        allows 5 wrong attempts. Without `SMTP_URL` outside production the key
+        is returned as `devCode` (and logged) instead of being emailed. In
+        production without `SMTP_URL` the mailer fails and the request surfaces
+        as 500 — `GET /auth/config` reports `emailKeyEnabled: false` in that
+        case, so clients should not offer the option. Rate limited
+        (`emailCode`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailRequest" }
+      responses:
+        "200":
+          description: Accepted (regardless of whether the account exists)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailCodeResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/email-code/verify:
+    post:
+      tags: [Auth]
+      operationId: verifyEmailCode
+      summary: Exchange an emailed sign-in key for a session
+      description: |
+        The key is single-use: it is deleted on success. Rate limited
+        (`emailCodeVerify`), plus at most 5 attempts per issued key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VerifyCodeRequest" }
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: |
+            One of: `Key expired or not requested — ask for a new one` (no live
+            key, or attempts exhausted), `Wrong sign-in key` (counts an
+            attempt), `No account for that email`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/google:
+    post:
+      tags: [Auth]
+      operationId: loginWithGoogle
+      summary: Continue with Google (ID token)
+      description: |
+        The client obtains a Google ID token (Google Identity Services on the
+        web, Credential Manager / Google Sign-In on Android) and posts it as
+        `credential`. The server verifies it against Google's `tokeninfo`
+        endpoint: `aud` must equal `GOOGLE_CLIENT_ID` and `email_verified` must
+        be `"true"`. Accounts are matched by email — there is no self-signup.
+        Rate limited (`auth`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GoogleLoginRequest" }
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: "`Google token rejected`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "403":
+          description: "`No RideVibe account for <email> — ask an admin to create one`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: "`Google sign-in is not configured (GOOGLE_CLIENT_ID)` — checked before the body is validated"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      operationId: getMe
+      summary: Who the current session belongs to
+      description: |
+        Reads the credential from `x-admin-token`, then `x-partner-token`, then
+        `Authorization: Bearer`. **Only `s_…` session tokens resolve here** —
+        the legacy env `ADMIN_TOKEN` and `pt_…` partner tokens are not accounts
+        and get 401.
+      security:
+        - AdminToken: []
+        - PartnerToken: []
+        - Bearer: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401":
+          description: "`Not signed in`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke the current session
+      description: |
+        Deletes the `s_…` session named by the same headers `GET /auth/me`
+        reads. Always succeeds — with no header, a legacy token or an unknown
+        session it is a no-op that still returns `signedOut: true`.
+      security:
+        - AdminToken: []
+        - PartnerToken: []
+        - Bearer: []
+        - {}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [signedOut]
+                properties:
+                  signedOut: { type: boolean, enum: [true] }
+
+  # ----------------------------------------------------------- /admin/api ----
+
+  /admin/api/overview:
+    get:
+      tags: [Admin]
+      operationId: adminOverview
+      summary: Live counts across every table plus bookings per day
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminOverview" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+
+  /admin/api/operators:
+    get:
+      tags: [Admin]
+      operationId: adminListOperators
+      summary: Every operator with what it inputs (routes, classes, kinds, fare range)
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      responses:
+        "200":
+          description: OK, ordered by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminOperator" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+
+  /admin/api/operators/{id}/partner-token:
+    post:
+      tags: [Admin, Admin accounts]
+      operationId: adminIssuePartnerToken
+      summary: Issue (or rotate) an operator's legacy partner token
+      description: |
+        Returns the new `pt_…` token **once**; only its SHA-256 is stored.
+        Reissuing invalidates the previous token. No request body.
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OperatorId"
+      responses:
+        "200":
+          description: Token issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PartnerTokenIssued" }
+        "400":
+          description: "`bad operator id` (not an integer)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+        "404":
+          description: "`No such operator`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/api/operators/{id}/services:
+    get:
+      tags: [Admin]
+      operationId: adminListOperatorServices
+      summary: One operator's services with the seat layout each allocates
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OperatorId"
+      responses:
+        "200":
+          description: OK (empty array for an unknown operator — existence is not checked)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Service" }
+        "400":
+          description: "`bad operator id` (not an integer)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+
+  /admin/api/accounts:
+    get:
+      tags: [Admin accounts]
+      operationId: adminListAccounts
+      summary: All dashboard sign-in accounts
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      responses:
+        "200":
+          description: OK, ordered by role then email
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Account" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+    post:
+      tags: [Admin accounts]
+      operationId: adminCreateAccount
+      summary: Create an ADMIN or PARTNER account
+      description: |
+        `PARTNER` accounts **must** carry `operatorId`; `ADMIN` accounts must
+        **not**. When `password` is omitted a 12-character password is
+        generated and returned once as `generatedPassword` (only the scrypt
+        hash is stored). Emails are trimmed and lower-cased.
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccountCreateRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountCreated" }
+        "400":
+          description: |
+            Validation failure, or `PARTNER accounts need operatorId; ADMIN
+            accounts must not have one`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+        "404":
+          description: "`No such operator`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: "`An account with that email already exists`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/api/accounts/{id}:
+    delete:
+      tags: [Admin accounts]
+      operationId: adminDeleteAccount
+      summary: Delete an account
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: string
+                    format: email
+                    description: The deleted account's email.
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+        "404":
+          description: "`No such account`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/api/accounts/{id}/reset-password:
+    post:
+      tags: [Admin accounts]
+      operationId: adminResetPassword
+      summary: Set or generate a new password for an account
+      description: |
+        Body is optional (an absent body is treated as `{}`); omit `password`
+        to have one generated and returned once. Every other session of the
+        account is revoked; the caller's own session survives when an admin
+        resets their own password.
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasswordResetRequest" }
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasswordResetResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+        "404":
+          description: "`No such account`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/api/bookings:
+    get:
+      tags: [Admin support]
+      operationId: adminSearchBookings
+      summary: Support search over bookings
+      description: |
+        `query` matches (ILIKE, substring) the ticket id, passenger name, user
+        id or QR payload; empty returns the newest bookings. Device ids are
+        never returned or searchable — they are the passenger's bearer
+        credential.
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema: { type: string, default: "" }
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/BookingStatus" }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: OK, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminBooking" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+
+  /admin/api/bookings/{id}:
+    get:
+      tags: [Admin support]
+      operationId: adminGetBooking
+      summary: One booking with its co-passengers
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBookingDetail" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+        "404": { $ref: "#/components/responses/NoSuchBooking" }
+
+  /admin/api/bookings/{id}/cancel:
+    post:
+      tags: [Admin support]
+      operationId: adminCancelBooking
+      summary: Cancel a booking and free its seats
+      description: |
+        Frees the seats back into inventory (one `AVAILABLE` seat event per
+        seat on the trip's WebSocket channel) and snapshots the seat labels so
+        the ticket stays displayable. Idempotency: a second cancel is 409.
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CancelRequest" }
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CancelResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+        "404": { $ref: "#/components/responses/NoSuchBooking" }
+        "409":
+          description: "`Booking is already cancelled`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /admin/api/bookings/{id}/refund:
+    post:
+      tags: [Admin support]
+      operationId: adminSetRefundStatus
+      summary: Record a refund decision (bookkeeping only)
+      description: |
+        No payment provider is integrated (roadmap Phase 3): this records the
+        support decision, it does not move money. Setting `REFUNDED` stamps
+        `refundedAtEpochMillis`; other statuses leave it as it was.
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RefundRequest" }
+      responses:
+        "200":
+          description: Recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [refundStatus]
+                properties:
+                  refundStatus: { $ref: "#/components/schemas/RefundStatus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+        "404": { $ref: "#/components/responses/NoSuchBooking" }
+
+  /admin/api/bookings/{id}/reissue-qr:
+    post:
+      tags: [Admin support]
+      operationId: adminReissueQr
+      summary: Issue a fresh QR payload for a booking
+      description: |
+        Replaces `qrPayload` with `RIDEVIBE|v0|<bookingId>|<nonce>`; the
+        passenger app sees it on its next ticket fetch. Still unsigned
+        (roadmap Phase 1). No request body.
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+      responses:
+        "200":
+          description: Reissued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [qrPayload]
+                properties:
+                  qrPayload: { type: string, example: "RIDEVIBE|v0|tkt_…|3fa9c1e0b7d2" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+        "404": { $ref: "#/components/responses/NoSuchBooking" }
+
+  /admin/api/trips:
+    get:
+      tags: [Admin]
+      operationId: adminListTrips
+      summary: Trips on a PH calendar day with sold / held / available counts
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/PhDate"
+        - name: operator
+          in: query
+          required: false
+          description: Substring match on operator name (ILIKE).
+          schema: { type: string, default: "" }
+        - name: place
+          in: query
+          required: false
+          description: Substring match on origin **or** destination (ILIKE).
+          schema: { type: string, default: "" }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: OK, ordered by departure then id
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminTrip" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+
+  /admin/api/trips/{id}/seats:
+    get:
+      tags: [Admin]
+      operationId: adminTripSeats
+      summary: Seat allocation for one trip with holder / buyer context
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripId"
+      responses:
+        "200":
+          description: OK, ordered by row then column
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminSeat" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+        "404": { $ref: "#/components/responses/NoSuchTrip" }
+
+  /admin/api/terminals:
+    get:
+      tags: [Admin]
+      operationId: adminListTerminals
+      summary: All terminals / locations
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      responses:
+        "200":
+          description: OK, ordered by region then name
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Terminal" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+
+  /admin/api/routes:
+    get:
+      tags: [Admin]
+      operationId: adminListRoutes
+      summary: Directed routes with service counts
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - name: query
+          in: query
+          required: false
+          description: Substring match on origin or destination; empty returns every route. Not zod-validated (any string).
+          schema: { type: string, default: "" }
+      responses:
+        "200":
+          description: OK, ordered by origin then destination
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminRoute" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+
+  /admin/api/journeys:
+    get:
+      tags: [Admin]
+      operationId: adminListJourneys
+      summary: Curated multi-leg journeys with their legs
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      responses:
+        "200":
+          description: OK, ordered by id
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminJourney" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+
+  /admin/api/users:
+    get:
+      tags: [Admin]
+      operationId: adminListUsers
+      summary: Passenger users (newest 500) with booking counts
+      description: Device ids are deliberately not included.
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      responses:
+        "200":
+          description: OK, newest first, at most 500
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminUser" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+
+  /admin/api/holds:
+    get:
+      tags: [Admin]
+      operationId: adminListHolds
+      summary: Live seat holds (soonest to expire first, at most 500)
+      security: [{ AdminToken: [] }, { Bearer: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminHold" }
+        "401": { $ref: "#/components/responses/AdminUnauthorized" }
+
+  # --------------------------------------------------------- /partner/api ----
+
+  /partner/api/me:
+    get:
+      tags: [Partner]
+      operationId: partnerMe
+      summary: The acting operator and its headline stats
+      description: "`readOnly` is true when the caller is an admin viewing this operator."
+      security: [{ PartnerToken: [] }, { AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/PartnerOperatorId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PartnerMe" }
+        "400": { $ref: "#/components/responses/PartnerAdminViewBadRequest" }
+        "401": { $ref: "#/components/responses/PartnerUnauthorized" }
+        "404": { $ref: "#/components/responses/PartnerAdminViewNoSuchOperator" }
+
+  /partner/api/services:
+    get:
+      tags: [Partner]
+      operationId: partnerListServices
+      summary: The operator's services
+      security: [{ PartnerToken: [] }, { AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/PartnerOperatorId"
+      responses:
+        "200":
+          description: OK, ordered by origin, destination, class
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Service" }
+        "400": { $ref: "#/components/responses/PartnerAdminViewBadRequest" }
+        "401": { $ref: "#/components/responses/PartnerUnauthorized" }
+        "404": { $ref: "#/components/responses/PartnerAdminViewNoSuchOperator" }
+    post:
+      tags: [Partner]
+      operationId: partnerCreateService
+      summary: Create a service (route + class + kind + fare + schedule)
+      description: |
+        Upserts the directed route (`mode` = `LAND` for BUS, `SEA` otherwise),
+        inserts the service and immediately generates trips and seat maps for
+        the next 14 PH days (`generatedTrips` / `generatedSeats`), so the
+        service is searchable on `/v1/trips` as soon as this returns. Seat
+        layout follows the class: 2x2 / 44 seats, or 2x1 / 30 for LUXURY.
+        Partner credential only — admins get 403.
+      security: [{ PartnerToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceCreateRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceCreated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/PartnerUnauthorized" }
+        "403": { $ref: "#/components/responses/AdminReadOnly" }
+        "409":
+          description: "`An identical service already exists`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /partner/api/services/{id}:
+    patch:
+      tags: [Partner]
+      operationId: partnerUpdateService
+      summary: Change fare, departure hours and/or duration
+      description: |
+        At least one field is required. Only **future** trips with **no sold
+        seats** are repriced / re-timed; removing an hour deletes only future
+        trips with no sales and no live holds; adding one generates trips over
+        the horizon. Class and kind are not editable (they define the physical
+        seat map) — create a new service instead. Partner credential only.
+      security: [{ PartnerToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ServiceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceUpdateRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceUpdated" }
+        "400":
+          description: "Validation failure (including `nothing to update`), or `bad service id`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/PartnerUnauthorized" }
+        "403": { $ref: "#/components/responses/AdminReadOnly" }
+        "404":
+          description: "`No such service` (also when the service belongs to another operator)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /partner/api/trips:
+    get:
+      tags: [Partner]
+      operationId: partnerListTrips
+      summary: The operator's departures on a PH calendar day
+      security: [{ PartnerToken: [] }, { AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/PhDate"
+        - $ref: "#/components/parameters/PartnerOperatorId"
+      responses:
+        "200":
+          description: OK, ordered by departure then id
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PartnerTrip" }
+        "400":
+          description: "Invalid `date` / `operatorId`, or admin view without `operatorId`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/PartnerUnauthorized" }
+        "404": { $ref: "#/components/responses/PartnerAdminViewNoSuchOperator" }
+    post:
+      tags: [Partner]
+      operationId: partnerAddExtraTrip
+      summary: Add a one-off extra departure on one of the operator's services
+      description: |
+        Creates trip `rs<serviceId>_<YYYYMMDD>_<HHMM>` at the given PH wall
+        time, copying the service's fare and duration, and generates its seat
+        inventory immediately (bookable in the passenger app right away).
+        Partner credential only.
+      security: [{ PartnerToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExtraTripRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExtraTripCreated" }
+        "400":
+          description: "Validation failure, `invalid date/time`, or `departure is in the past`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/PartnerUnauthorized" }
+        "403": { $ref: "#/components/responses/AdminReadOnly" }
+        "404":
+          description: "`No such service` (also when it belongs to another operator)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: "`A departure at that time already exists`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /partner/api/trips/{id}/seats:
+    get:
+      tags: [Partner]
+      operationId: partnerTripSeats
+      summary: Seat map with passenger names on sold seats (boarding manifest)
+      description: No device ids or contact details — that context stays on `/admin`.
+      security: [{ PartnerToken: [] }, { AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripId"
+        - $ref: "#/components/parameters/PartnerOperatorId"
+      responses:
+        "200":
+          description: OK, ordered by row then column
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PartnerSeat" }
+        "400": { $ref: "#/components/responses/PartnerAdminViewBadRequest" }
+        "401": { $ref: "#/components/responses/PartnerUnauthorized" }
+        "404":
+          description: "`No such trip` (also when it belongs to another operator), or `No such operator` (admin view)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /partner/api/trips/{id}/onsite:
+    post:
+      tags: [Partner]
+      operationId: partnerRecordOnsiteSale
+      summary: Record a walk-up counter sale
+      description: |
+        Send **either** `seatLabels` (bus trips — pick seats) **or** `count`
+        (open-seating ferry / fastcraft — auto-assigns the first free seats).
+        Issues ticket `tkt_<uuid>` (REGULAR, `PAID` / `CASH_ON_BOARD`, QR
+        `RIDEVIBE|v0|<ticketId>`) under the operator's on-site user, respects
+        live app holds, and broadcasts `OCCUPIED` per seat so passenger apps
+        update live. Partner credential only.
+      security: [{ PartnerToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TripId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OnsiteSaleRequest" }
+      responses:
+        "201":
+          description: Ticket issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnsiteSaleCreated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/PartnerUnauthorized" }
+        "403": { $ref: "#/components/responses/AdminReadOnly" }
+        "404":
+          description: "`No such trip` (also when it belongs to another operator)"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: |
+            One of: `One or more seats do not exist on this trip`, `One or
+            more seats are already sold`, `One or more seats are being bought
+            in the app right now`, `Only <n> seat(s) left on this departure`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /partner/api/bookings:
+    get:
+      tags: [Partner]
+      operationId: partnerManifest
+      summary: Booking manifest for a PH calendar day of departures
+      security: [{ PartnerToken: [] }, { AdminToken: [] }, { Bearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/PhDate"
+        - $ref: "#/components/parameters/PartnerOperatorId"
+      responses:
+        "200":
+          description: OK, ordered by departure then booking time
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ManifestEntry" }
+        "400":
+          description: "Invalid `date` / `operatorId`, or admin view without `operatorId`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/PartnerUnauthorized" }
+        "404": { $ref: "#/components/responses/PartnerAdminViewNoSuchOperator" }
+
+components:
+
+  securitySchemes:
+    AdminToken:
+      type: apiKey
+      in: header
+      name: x-admin-token
+      description: |
+        Admin credential: an `s_…` session token from `/auth/*` belonging to an
+        **ADMIN** account, or the legacy env `ADMIN_TOKEN` (root credential for
+        scripts/tests; bypasses accounts). Compared in constant time / looked
+        up by SHA-256. Failure on `/admin/api/*` is `401 { message: "Admin
+        sign-in required" }`.
+
+        On `/partner/api/*` reads this credential opens the **admin read-only
+        view** of one operator: `operatorId` (query) is then **required**
+        (400 without it, 404 for an unknown operator) and every partner
+        **write** returns 403. `x-partner-token`, when present and non-blank,
+        takes precedence over this header.
+    Bearer:
+      type: http
+      scheme: bearer
+      description: |
+        `Authorization: Bearer <credential>` — accepted everywhere
+        `x-admin-token` is, carrying the same admin credential (session or
+        legacy `ADMIN_TOKEN`). The header wins when both are sent. It is **not**
+        a way to send a partner token: on `/partner/api/*` a bearer value is
+        evaluated as an admin credential (read-only view).
+    PartnerToken:
+      type: apiKey
+      in: header
+      name: x-partner-token
+      description: |
+        Partner credential: an `s_…` session belonging to a **PARTNER** account
+        (which must have an operator) or the legacy per-operator `pt_…` token
+        issued by `POST /admin/api/operators/{id}/partner-token`. Grants read
+        and write access to that operator's own data only. Failures are 401
+        with `Partner sign-in required` (session that is not a PARTNER),
+        `Invalid partner token` (unknown `pt_…`), or `Partner token required
+        (X-Partner-Token header)` (nothing usable sent). Whitespace is
+        trimmed; a blank header is treated as absent.
+
+  parameters:
+    OperatorId:
+      name: id
+      in: path
+      required: true
+      description: Operator id (integer). A non-integer is `400 bad operator id`.
+      schema: { type: integer }
+    AccountId:
+      name: id
+      in: path
+      required: true
+      description: Account id (UUID).
+      schema: { type: string, format: uuid }
+    BookingId:
+      name: id
+      in: path
+      required: true
+      description: Booking / ticket id, e.g. `tkt_…`.
+      schema: { type: string }
+    TripId:
+      name: id
+      in: path
+      required: true
+      description: Trip id, e.g. `rs291_20260821_0200`.
+      schema: { type: string }
+    ServiceId:
+      name: id
+      in: path
+      required: true
+      description: Route-service id (integer). A non-integer is `400 bad service id`.
+      schema: { type: integer }
+    PhDate:
+      name: date
+      in: query
+      required: false
+      description: Philippine calendar day `YYYY-MM-DD`. Defaults to today (PH).
+      schema: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$", example: "2026-09-03" }
+    PartnerOperatorId:
+      name: operatorId
+      in: query
+      required: false
+      description: |
+        **Required for the admin read-only view** (`x-admin-token` /
+        `Authorization: Bearer` without `x-partner-token`): selects which
+        operator to view. Ignored for partner credentials, which always act for
+        their own operator. Must be an integer where it is zod-validated
+        (`/partner/api/trips`, `/partner/api/bookings`).
+      schema: { type: integer }
+
+  responses:
+    BadRequest:
+      description: Validation failure — `message` is the first zod issue (or Fastify's own message for malformed JSON).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    AdminUnauthorized:
+      description: "`Admin sign-in required` — missing or invalid admin credential"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    PartnerUnauthorized:
+      description: |
+        One of `Partner sign-in required`, `Invalid partner token`,
+        `Partner token required (X-Partner-Token header)`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    AdminReadOnly:
+      description: "`Admin access to the partner dashboard is read-only` — admins cannot write under /partner"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    PartnerAdminViewBadRequest:
+      description: "`operatorId query parameter required for admin read-only view` (admin credential without operatorId)"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    PartnerAdminViewNoSuchOperator:
+      description: "`No such operator` (admin read-only view with an unknown operatorId)"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NoSuchBooking:
+      description: "`No such booking`"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NoSuchTrip:
+      description: "`No such trip`"
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    TooManyRequests:
+      description: Per-IP request ceiling exceeded — see `x-rate-limits`. Carries `x-ratelimit-*` headers.
+      content:
+        application/json:
+          schema:
+            type: object
+            description: "@fastify/rate-limit's default body."
+            properties:
+              statusCode: { type: integer, enum: [429] }
+              error: { type: string, example: Too Many Requests }
+              message: { type: string, example: "Rate limit exceeded, retry in 1 minute" }
+
+  schemas:
+
+    # ---- enums (shared with spec/openapi.yaml) ------------------------------
+
+    BusClass:
+      type: string
+      enum: [ORDINARY, DELUXE, LUXURY]
+      description: Same values as the passenger contract (STRICT on the client).
+
+    RideKind:
+      type: string
+      enum: [BUS, FERRY, FASTCRAFT]
+      description: Same values as the passenger contract.
+
+    LocationKind:
+      type: string
+      enum: [BUS_TERMINAL, SEAPORT, CITY]
+
+    RouteMode:
+      type: string
+      enum: [LAND, SEA]
+      description: Derived from the ride kind at service creation (BUS = LAND, otherwise SEA).
+
+    PassengerType:
+      type: string
+      enum: [REGULAR, STUDENT, SENIOR_CITIZEN, PWD]
+
+    PaymentMethod:
+      type: string
+      enum: [GCASH, QR_PH, CARD, CASH_ON_BOARD]
+
+    PaymentStatus:
+      type: string
+      enum: [PAID, CASH_ON_BOARD]
+
+    SeatStatus:
+      type: string
+      enum: [AVAILABLE, LOCKED, OCCUPIED, SELECTED]
+      description: |
+        Same domain as the passenger contract. Staff endpoints only ever emit
+        AVAILABLE, LOCKED or OCCUPIED — SELECTED is a client-side display state
+        the server never sends.
+
+    BookingStatus:
+      type: string
+      enum: [CONFIRMED, CANCELLED]
+
+    RefundStatus:
+      type: string
+      enum: [NONE, REQUESTED, REFUNDED]
+      description: Bookkeeping only — no payment provider is integrated yet.
+
+    AccountRole:
+      type: string
+      enum: [ADMIN, PARTNER]
+
+    # ---- shared ------------------------------------------------------------
+
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+
+    # ---- auth --------------------------------------------------------------
+
+    AuthConfig:
+      type: object
+      required: [googleEnabled, googleClientId, emailKeyEnabled]
+      properties:
+        googleEnabled: { type: boolean }
+        googleClientId: { type: string, nullable: true }
+        emailKeyEnabled: { type: boolean }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1 }
+
+    EmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
+    VerifyCodeRequest:
+      type: object
+      required: [email, code]
+      properties:
+        email: { type: string, format: email }
+        code:
+          type: string
+          pattern: "^\\d{6}$"
+          description: The 6-digit key. Violation message is `the sign-in key is 6 digits`.
+
+    GoogleLoginRequest:
+      type: object
+      required: [credential]
+      properties:
+        credential:
+          type: string
+          minLength: 20
+          description: Google ID token (JWT).
+
+    EmailCodeResponse:
+      type: object
+      required: [sent, message]
+      properties:
+        sent: { type: boolean, enum: [true] }
+        message: { type: string, example: "If that email has an account, a sign-in key is on its way." }
+        devCode:
+          type: string
+          pattern: "^\\d{6}$"
+          description: Present only when the key was NOT emailed (no `SMTP_URL`) and `NODE_ENV` is not `production`.
+
+    Session:
+      type: object
+      description: Returned by every successful sign-in.
+      required: [token, email, role, operatorId, operatorName, expiresInDays]
+      properties:
+        token:
+          type: string
+          pattern: "^s_[0-9a-f]{64}$"
+          description: Send as `x-admin-token` (ADMIN) or `x-partner-token` (PARTNER). Stored hashed; 7-day expiry.
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/AccountRole" }
+        operatorId: { type: integer, nullable: true, description: Null for ADMIN accounts. }
+        operatorName: { type: string, nullable: true }
+        expiresInDays: { type: integer, enum: [7] }
+
+    Me:
+      type: object
+      required: [email, role, operatorId, operatorName]
+      properties:
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/AccountRole" }
+        operatorId: { type: integer, nullable: true }
+        operatorName: { type: string, nullable: true }
+
+    # ---- admin -------------------------------------------------------------
+
+    AdminOverview:
+      type: object
+      description: |
+        Count fields are spread straight from the SQL row and are therefore
+        **snake_case** — the one place on this surface that is not camelCase.
+      required:
+        - operators
+        - terminals
+        - routes
+        - services
+        - journeys
+        - upcoming_trips
+        - seats
+        - active_holds
+        - users
+        - bookings
+        - cancelled_bookings
+        - refunds_pending
+        - bookingsByDay
+      properties:
+        operators: { type: integer }
+        terminals: { type: integer }
+        routes: { type: integer }
+        services: { type: integer }
+        journeys: { type: integer }
+        upcoming_trips: { type: integer }
+        seats: { type: integer }
+        active_holds: { type: integer }
+        users: { type: integer }
+        bookings: { type: integer }
+        cancelled_bookings: { type: integer }
+        refunds_pending: { type: integer, description: Bookings with refundStatus REQUESTED. }
+        bookingsByDay:
+          type: array
+          description: Last 7 PH calendar days including today, oldest first; empty days present with count 0.
+          items:
+            type: object
+            required: [day, count]
+            properties:
+              day: { type: string, example: "2026-09-03" }
+              count: { type: integer }
+
+    AdminOperator:
+      type: object
+      required: [id, name, services, routes, busClasses, rideKinds, avgRating, minFarePhp, maxFarePhp]
+      properties:
+        id: { type: integer }
+        name: { type: string, example: Victory Liner }
+        services: { type: integer }
+        routes: { type: integer, description: Distinct routes served. }
+        busClasses:
+          type: array
+          items: { $ref: "#/components/schemas/BusClass" }
+        rideKinds:
+          type: array
+          items: { $ref: "#/components/schemas/RideKind" }
+        avgRating: { type: number, format: double, nullable: true, description: Rounded to 2 decimals; null with no rated services. }
+        minFarePhp: { type: number, format: double, nullable: true, description: Null for an operator with no services. }
+        maxFarePhp: { type: number, format: double, nullable: true }
+
+    PartnerTokenIssued:
+      type: object
+      required: [operatorId, operatorName, token, note]
+      properties:
+        operatorId: { type: integer }
+        operatorName: { type: string }
+        token: { type: string, pattern: "^pt_[0-9a-f]{36}$", description: Shown once. }
+        note: { type: string, example: "Shown once — share it with the operator; reissuing invalidates it." }
+
+    Service:
+      type: object
+      description: One route-service (`serviceRowToDto`); identical shape on `/admin/api/operators/{id}/services` and `/partner/api/services`.
+      required: [id, origin, destination, mode, busClass, rideKind, farePhp, rating, departureHours, durationMinutes, seatLayout]
+      properties:
+        id: { type: integer }
+        origin: { type: string }
+        destination: { type: string }
+        mode: { $ref: "#/components/schemas/RouteMode" }
+        busClass: { $ref: "#/components/schemas/BusClass" }
+        rideKind: { $ref: "#/components/schemas/RideKind" }
+        farePhp: { type: number, format: double }
+        rating: { type: number, format: double, nullable: true }
+        departureHours:
+          type: array
+          description: Hours of day (PH), sorted ascending on write.
+          items: { type: integer, minimum: 0, maximum: 23 }
+        durationMinutes: { type: integer }
+        seatLayout:
+          type: string
+          description: |
+            Human-readable allocation: `2x2 (44 seats)`, `2x1 (30 seats)`
+            (LUXURY), or for non-bus kinds `Open seating · 44 capacity` /
+            `Open seating · 30 capacity`.
+          example: "2x2 (44 seats)"
+
+    Account:
+      type: object
+      required: [id, email, role, operatorId, operatorName, hasPassword, createdAtEpochMillis, lastLoginAtEpochMillis]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/AccountRole" }
+        operatorId: { type: integer, nullable: true }
+        operatorName: { type: string, nullable: true }
+        hasPassword: { type: boolean }
+        createdAtEpochMillis: { type: integer, format: int64 }
+        lastLoginAtEpochMillis: { type: integer, format: int64, nullable: true }
+
+    AccountCreateRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email: { type: string, format: email }
+        password:
+          type: string
+          minLength: 8
+          description: Omit to have one generated and returned once.
+        role: { $ref: "#/components/schemas/AccountRole" }
+        operatorId:
+          type: integer
+          description: Required for PARTNER, forbidden for ADMIN.
+
+    AccountCreated:
+      type: object
+      required: [email, role, operatorId]
+      properties:
+        email: { type: string, format: email, description: Normalised (trimmed, lower-cased). }
+        role: { $ref: "#/components/schemas/AccountRole" }
+        operatorId: { type: integer, nullable: true }
+        generatedPassword:
+          type: string
+          description: Present only when `password` was omitted from the request. 12 URL-safe characters.
+
+    PasswordResetRequest:
+      type: object
+      properties:
+        password: { type: string, minLength: 8, description: Omit to have one generated. }
+
+    PasswordResetResponse:
+      type: object
+      required: [email, revokedSessions]
+      properties:
+        email: { type: string, format: email }
+        revokedSessions: { type: integer, description: Sessions of the account signed out by the reset (the caller's own is kept). }
+        generatedPassword: { type: string, description: Present only when `password` was omitted. }
+
+    AdminBooking:
+      type: object
+      description: "`bookingRowToDto` — a booking joined with its trip, route and operator."
+      required:
+        - id
+        - status
+        - refundStatus
+        - refundNote
+        - cancelReason
+        - passengerFullName
+        - passengerType
+        - infantCount
+        - paymentMethod
+        - paymentStatus
+        - qrPayload
+        - promoCode
+        - userId
+        - tripId
+        - departureEpochMillis
+        - farePhp
+        - origin
+        - destination
+        - operatorName
+        - busClass
+        - rideKind
+        - seatLabels
+        - createdAtEpochMillis
+        - cancelledAtEpochMillis
+        - refundedAtEpochMillis
+      properties:
+        id: { type: string, example: "tkt_6f1c…" }
+        status: { $ref: "#/components/schemas/BookingStatus" }
+        refundStatus: { $ref: "#/components/schemas/RefundStatus" }
+        refundNote: { type: string, nullable: true }
+        cancelReason: { type: string, nullable: true }
+        passengerFullName: { type: string }
+        passengerType: { $ref: "#/components/schemas/PassengerType" }
+        infantCount: { type: integer }
+        paymentMethod: { $ref: "#/components/schemas/PaymentMethod" }
+        paymentStatus: { $ref: "#/components/schemas/PaymentStatus" }
+        qrPayload: { type: string }
+        promoCode: { type: string, nullable: true }
+        userId: { type: string, format: uuid, description: The passenger's users.id (never the device id). }
+        tripId: { type: string }
+        departureEpochMillis: { type: integer, format: int64 }
+        farePhp: { type: number, format: double, description: Per-seat fare of the trip. }
+        origin: { type: string }
+        destination: { type: string }
+        operatorName: { type: string }
+        busClass: { $ref: "#/components/schemas/BusClass" }
+        rideKind: { $ref: "#/components/schemas/RideKind" }
+        seatLabels:
+          type: array
+          items: { type: string }
+          description: Live seat labels in booking order; for a cancelled booking, the snapshot taken at cancellation.
+        createdAtEpochMillis: { type: integer, format: int64 }
+        cancelledAtEpochMillis: { type: integer, format: int64, nullable: true }
+        refundedAtEpochMillis: { type: integer, format: int64, nullable: true }
+
+    CoPassenger:
+      type: object
+      required: [firstName, lastName, mobileNumber, type, discountIdImagePath]
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        mobileNumber: { type: string, nullable: true }
+        type: { $ref: "#/components/schemas/PassengerType" }
+        discountIdImagePath: { type: string, nullable: true }
+
+    AdminBookingDetail:
+      allOf:
+        - $ref: "#/components/schemas/AdminBooking"
+        - type: object
+          required: [coPassengers]
+          properties:
+            coPassengers:
+              type: array
+              items: { $ref: "#/components/schemas/CoPassenger" }
+
+    CancelRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Violation message for an empty reason is `a cancellation reason is required`.
+
+    CancelResponse:
+      type: object
+      required: [cancelled, freedSeats]
+      properties:
+        cancelled: { type: boolean, enum: [true] }
+        freedSeats:
+          type: array
+          items: { type: string }
+          description: Labels of the seats returned to inventory, in booking order.
+
+    RefundRequest:
+      type: object
+      required: [refundStatus]
+      properties:
+        refundStatus: { $ref: "#/components/schemas/RefundStatus" }
+        note: { type: string, maxLength: 500, nullable: true, default: null }
+
+    AdminTrip:
+      type: object
+      required: [id, origin, destination, operatorName, busClass, rideKind, departureEpochMillis, arrivalEpochMillis, farePhp, seats, sold, held, available]
+      properties:
+        id: { type: string }
+        origin: { type: string }
+        destination: { type: string }
+        operatorName: { type: string }
+        busClass: { $ref: "#/components/schemas/BusClass" }
+        rideKind: { $ref: "#/components/schemas/RideKind" }
+        departureEpochMillis: { type: integer, format: int64 }
+        arrivalEpochMillis: { type: integer, format: int64 }
+        farePhp: { type: number, format: double }
+        seats: { type: integer, description: Total seats generated for the trip. }
+        sold: { type: integer }
+        held: { type: integer, description: Live (unexpired) holds. }
+        available: { type: integer, description: "`seats - sold - held`." }
+
+    AdminSeat:
+      type: object
+      required: [id, label, row, column, status, bookingId, heldByUserId, holdExpiresAtEpochMillis]
+      properties:
+        id: { type: string }
+        label: { type: string, example: 1A }
+        row: { type: integer }
+        column: { type: integer, description: Zero-based. }
+        status: { $ref: "#/components/schemas/SeatStatus" }
+        bookingId: { type: string, nullable: true }
+        heldByUserId: { type: string, format: uuid, nullable: true, description: users.id of the holder, never a device id. }
+        holdExpiresAtEpochMillis: { type: integer, format: int64, nullable: true }
+
+    Terminal:
+      type: object
+      required: [name, isCentralTerminal, kind, region, description]
+      properties:
+        name: { type: string, example: PITX }
+        isCentralTerminal: { type: boolean }
+        kind: { $ref: "#/components/schemas/LocationKind" }
+        region: { type: string }
+        description: { type: string }
+
+    AdminRoute:
+      type: object
+      required: [id, origin, destination, mode, services]
+      properties:
+        id: { type: integer }
+        origin: { type: string }
+        destination: { type: string }
+        mode: { $ref: "#/components/schemas/RouteMode" }
+        services: { type: integer }
+
+    AdminJourney:
+      type: object
+      required: [id, title, from, to, matchKeywords, legs]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        from: { type: string }
+        to: { type: string }
+        matchKeywords:
+          type: array
+          items: { type: string }
+        legs:
+          type: array
+          items: { $ref: "#/components/schemas/JourneyLeg" }
+
+    JourneyLeg:
+      type: object
+      required: [kind, from, to, durationMinutes, indicativeFarePhp, note]
+      properties:
+        kind: { $ref: "#/components/schemas/RideKind" }
+        from: { type: string }
+        to: { type: string }
+        durationMinutes: { type: integer }
+        indicativeFarePhp: { type: number, format: double }
+        note: { type: string, nullable: true }
+
+    AdminUser:
+      type: object
+      required: [id, createdAtEpochMillis, bookings, cancelled]
+      properties:
+        id: { type: string, format: uuid }
+        createdAtEpochMillis: { type: integer, format: int64 }
+        bookings: { type: integer }
+        cancelled: { type: integer }
+
+    AdminHold:
+      type: object
+      required: [seatId, label, tripId, origin, destination, departureEpochMillis, userId, expiresAtEpochMillis]
+      properties:
+        seatId: { type: string }
+        label: { type: string }
+        tripId: { type: string }
+        origin: { type: string }
+        destination: { type: string }
+        departureEpochMillis: { type: integer, format: int64 }
+        userId: { type: string, format: uuid }
+        expiresAtEpochMillis: { type: integer, format: int64 }
+
+    # ---- partner -----------------------------------------------------------
+
+    PartnerMe:
+      type: object
+      required: [operatorId, operatorName, readOnly, services, routes, upcomingTrips, departuresNext24h, seatsSoldUpcoming, upcomingRevenuePhp]
+      properties:
+        operatorId: { type: integer }
+        operatorName: { type: string }
+        readOnly: { type: boolean, description: True for the admin read-only view. }
+        services: { type: integer }
+        routes: { type: integer }
+        upcomingTrips: { type: integer }
+        departuresNext24h: { type: integer }
+        seatsSoldUpcoming: { type: integer }
+        upcomingRevenuePhp: { type: number, format: double, description: Sum of sold-seat fares on future departures. }
+
+    DepartureHours:
+      type: array
+      description: Unique hours of day (PH). Violation message for duplicates is `departureHours must be unique`.
+      minItems: 1
+      maxItems: 24
+      uniqueItems: true
+      items: { type: integer, minimum: 0, maximum: 23 }
+
+    ServiceCreateRequest:
+      type: object
+      required: [origin, destination, busClass, rideKind, farePhp, departureHours, durationMinutes]
+      properties:
+        origin: { type: string, minLength: 1, maxLength: 80, description: Trimmed. }
+        destination: { type: string, minLength: 1, maxLength: 80, description: Trimmed. }
+        busClass: { $ref: "#/components/schemas/BusClass" }
+        rideKind: { $ref: "#/components/schemas/RideKind" }
+        farePhp:
+          type: number
+          format: double
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 100000
+          description: Pesos, at most two decimals.
+        departureHours: { $ref: "#/components/schemas/DepartureHours" }
+        durationMinutes: { type: integer, minimum: 15, maximum: 4320 }
+
+    ServiceCreated:
+      type: object
+      required: [service, generatedTrips, generatedSeats]
+      properties:
+        service: { $ref: "#/components/schemas/Service" }
+        generatedTrips: { type: integer }
+        generatedSeats: { type: integer }
+
+    ServiceUpdateRequest:
+      type: object
+      description: At least one property is required (`nothing to update` otherwise).
+      minProperties: 1
+      properties:
+        farePhp:
+          type: number
+          format: double
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 100000
+        departureHours: { $ref: "#/components/schemas/DepartureHours" }
+        durationMinutes: { type: integer, minimum: 15, maximum: 4320 }
+
+    ServiceUpdated:
+      type: object
+      required: [service, repricedTrips, removedTrips, addedTrips]
+      properties:
+        service: { $ref: "#/components/schemas/Service" }
+        repricedTrips: { type: integer, description: Future unsold trips whose fare changed. }
+        removedTrips: { type: integer, description: Future unsold, unheld trips deleted because their hour was removed. }
+        addedTrips: { type: integer, description: Trips generated to fill the horizon. }
+
+    ExtraTripRequest:
+      type: object
+      required: [serviceId, date, time]
+      properties:
+        serviceId: { type: integer }
+        date: { type: string, pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: PH calendar day. }
+        time:
+          type: string
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d$"
+          description: PH wall time `HH:MM`. Violation message is `time must be HH:MM (PH)`.
+
+    ExtraTripCreated:
+      type: object
+      required: [tripId, seats]
+      properties:
+        tripId: { type: string, example: rs291_20260905_1430 }
+        seats: { type: integer, description: Seats generated (44, or 30 for LUXURY). }
+
+    OnsiteSaleRequest:
+      type: object
+      description: Exactly one of `seatLabels` or `count` (violation message `send either seatLabels or count`).
+      properties:
+        seatLabels:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { type: string, minLength: 1 }
+        count: { type: integer, minimum: 1, maximum: 20 }
+        passengerFullName: { type: string, minLength: 1, maxLength: 120, default: Walk-in passenger, description: Trimmed. }
+
+    OnsiteSaleCreated:
+      type: object
+      required: [ticketId, seatLabels]
+      properties:
+        ticketId: { type: string, pattern: "^tkt_[0-9a-f-]{36}$" }
+        seatLabels:
+          type: array
+          items: { type: string }
+
+    PartnerTrip:
+      type: object
+      description: Like `AdminTrip` without `operatorName` (the caller is the operator).
+      required: [id, origin, destination, busClass, rideKind, departureEpochMillis, arrivalEpochMillis, farePhp, seats, sold, held, available]
+      properties:
+        id: { type: string }
+        origin: { type: string }
+        destination: { type: string }
+        busClass: { $ref: "#/components/schemas/BusClass" }
+        rideKind: { $ref: "#/components/schemas/RideKind" }
+        departureEpochMillis: { type: integer, format: int64 }
+        arrivalEpochMillis: { type: integer, format: int64 }
+        farePhp: { type: number, format: double }
+        seats: { type: integer }
+        sold: { type: integer }
+        held: { type: integer }
+        available: { type: integer, description: "`seats - sold - held`." }
+
+    PartnerSeat:
+      type: object
+      required: [label, row, column, status, passengerName]
+      properties:
+        label: { type: string }
+        row: { type: integer }
+        column: { type: integer, description: Zero-based. }
+        status: { $ref: "#/components/schemas/SeatStatus" }
+        passengerName: { type: string, nullable: true, description: The booking's primary passenger on OCCUPIED seats; null otherwise. }
+
+    ManifestEntry:
+      type: object
+      required: [id, passengerFullName, passengerType, partySize, infantCount, paymentMethod, paymentStatus, status, tripId, departureEpochMillis, origin, destination, seatLabels]
+      properties:
+        id: { type: string }
+        passengerFullName: { type: string }
+        passengerType: { $ref: "#/components/schemas/PassengerType" }
+        partySize: { type: integer, description: Primary passenger plus co-passengers (infants excluded). }
+        infantCount: { type: integer }
+        paymentMethod: { $ref: "#/components/schemas/PaymentMethod" }
+        paymentStatus: { $ref: "#/components/schemas/PaymentStatus" }
+        status: { $ref: "#/components/schemas/BookingStatus" }
+        tripId: { type: string }
+        departureEpochMillis: { type: integer, format: int64 }
+        origin: { type: string }
+        destination: { type: string }
+        seatLabels:
+          type: array
+          items: { type: string }
+
+x-ui-shells:
+  description: |
+    Static HTML shells, served unauthenticated (every API call the page makes
+    carries the token). They are not API operations: the staff contract test
+    asserts they exist but excludes them from the path comparison.
+  routes:
+    - method: GET
+      path: /admin
+      file: admin/dashboard.html
+    - method: GET
+      path: /partner
+      file: admin/partner.html
+
+x-rate-limits:
+  description: |
+    Per-IP ceilings from `src/plugins/rate-limit.ts` (`DEFAULT_RATE_LIMITS`),
+    registered with `global: false` so only the routes below are limited;
+    every other staff route is unthrottled. Exceeding one returns 429 with
+    `x-ratelimit-limit` / `x-ratelimit-remaining` / `x-ratelimit-reset`
+    headers. The store is in-memory per process.
+  auth:
+    limit: 10 per 1 minute per IP
+    routes: ["POST /auth/login", "POST /auth/google"]
+  emailCode:
+    limit: 5 per 10 minutes per IP
+    routes: ["POST /auth/email-code"]
+  emailCodeVerify:
+    limit: 20 per 10 minutes per IP (plus 5 wrong attempts per issued key, enforced separately → 401)
+    routes: ["POST /auth/email-code/verify"]
+  lock:
+    limit: 300 per 1 minute per IP
+    routes: ["POST /v1/trips/{tripId}/seats/{seatId}/lock"]
+    note: Passenger route — listed here only because it shares the plugin; documented in spec/openapi.yaml.

@@ -13,6 +13,14 @@ data class CoPassenger(
     val discountIdImagePath: String? = null,
 )
 
+/**
+ * Lifecycle of a booking, shared by the rider's [Ticket] and the staff
+ * console's support views. REFUNDED is a cancelled booking whose fare was
+ * returned; the staff surface tracks the refund bookkeeping separately in
+ * [RefundStatus].
+ */
+enum class BookingStatus { CONFIRMED, CANCELLED, REFUNDED }
+
 data class Ticket(
     val id: String,
     val trip: Trip,
@@ -27,6 +35,10 @@ data class Ticket(
     val qrPayload: String,
     /** For CASH_ON_BOARD reservations: when the unpaid hold lapses. Null once paid. */
     val reservationExpiresAtEpochMillis: Long? = null,
+    /** CONFIRMED unless support cancelled or refunded it (or a cash reservation lapsed). */
+    val status: BookingStatus = BookingStatus.CONFIRMED,
+    /** The idempotency key the client sent when booking; lets a retried checkout find its ticket. */
+    val clientReference: String? = null,
 )
 
 enum class PaymentStatus {

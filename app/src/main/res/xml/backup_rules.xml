@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto Backup (API 23-30) content rules: exclude everything. The app keeps
+     a device identity, a booking cart and cached tickets that must not be
+     restored onto another device; allowBackup="false" is the primary switch
+     and these rules keep any partner/OEM backup agent honest. -->
+<full-backup-content>
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
+</full-backup-content>

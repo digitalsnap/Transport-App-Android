@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Discount-ID capture (CameraX). The app manifest declares the same;
+         the merger de-duplicates. required=false: riders can pick a photo
+         from the gallery instead, so a camera-less device still installs. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
+</manifest>

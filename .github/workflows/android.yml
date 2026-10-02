@@ -1,0 +1,88 @@
+# RideVibe Android CI.
+#
+# Builds, tests and lints every push and pull request. Release signing and
+# Firebase App Distribution uploads are deliberately NOT run here: they are
+# developer-owned steps documented in RELEASING.md and need the keystore and
+# Firebase credentials that never enter the repo or CI. assembleRelease below
+# therefore produces an UNSIGNED APK; app/build.gradle.kts only warns about
+# the missing keystore, it does not fail.
+#
+# app/google-services.json is tracked in git, so the google-services plugin
+# needs no secret injection to run on CI.
+
+name: Android CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  build:
+    name: Build, test, lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      # Mocks are on for CI so the build never depends on a reachable CRS backend.
+      - name: Assemble debug
+        run: ./gradlew assembleDebug -Pridevibe.useMocks=true --no-daemon --stacktrace
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest :core-domain:test -Pridevibe.useMocks=true --no-daemon --stacktrace
+
+      # docs/seed/*.json is generated from the Kotlin mock corpus. If regenerating
+      # it changes tracked files, someone edited the mock without re-exporting.
+      - name: Export seed data
+        run: ./gradlew :core-network:exportSeedData -Pridevibe.useMocks=true --no-daemon --stacktrace
+
+      - name: Check seed JSON is up to date
+        run: |
+          if [ -n "$(git status --porcelain docs/seed)" ]; then
+            echo "::error::Seed JSON drifted from the Kotlin mock. Run ./gradlew :core-network:exportSeedData, then commit docs/seed."
+            git --no-pager diff --stat docs/seed
+            exit 1
+          fi
+
+      - name: Lint
+        run: ./gradlew :app:lintDebug -Pridevibe.useMocks=true --no-daemon --stacktrace
+
+      # Unsigned by design; see the header comment.
+      - name: Assemble release (unsigned)
+        run: ./gradlew assembleRelease -Pridevibe.useMocks=true --no-daemon --stacktrace
+
+      - name: Upload debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ridevibe-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.xml
+          if-no-files-found: warn

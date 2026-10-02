@@ -24,4 +24,5 @@ include(
     ":feature-seatmap",
     ":feature-checkout",
     ":feature-ticket",
+    ":feature-admin",
 )

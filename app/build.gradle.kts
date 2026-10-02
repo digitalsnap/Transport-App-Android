@@ -13,19 +13,36 @@ plugins {
     alias(libs.plugins.firebase.appdistribution)
 }
 
-// Release signing credentials. Never committed: keystore.properties is gitignored,
-// and CI supplies the same four values as RIDEVIBE_* environment variables.
+// Release signing credentials. Never committed: keystore.properties is gitignored;
+// a CI job can instead supply the same four values as RIDEVIBE_* environment variables.
 // See RELEASING.md for how to generate the keystore and fill this in.
 val keystoreProperties = Properties().apply {
     val file = rootProject.file("keystore.properties")
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
+// A blank value in keystore.properties falls through to the environment variable.
 fun signingSecret(key: String, envVar: String): String? =
-    (keystoreProperties.getProperty(key) ?: System.getenv(envVar))?.takeIf { it.isNotBlank() }
+    keystoreProperties.getProperty(key)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(envVar)?.takeIf { it.isNotBlank() }
 
 val releaseStoreFile = signingSecret("storeFile", "RIDEVIBE_STORE_FILE")
 val hasReleaseKeystore = releaseStoreFile != null
+if (hasReleaseKeystore) {
+    // A storeFile with no password or alias would only fail deep inside packaging.
+    val missing = listOf(
+        "storePassword" to "RIDEVIBE_STORE_PASSWORD",
+        "keyAlias" to "RIDEVIBE_KEY_ALIAS",
+        "keyPassword" to "RIDEVIBE_KEY_PASSWORD",
+    ).filter { (key, env) -> signingSecret(key, env) == null }.map { it.first }
+    // Warn, never fail: a half-filled file must not block debug builds on a dev machine.
+    if (missing.isNotEmpty()) {
+        logger.warn("RideVibe: keystore.properties sets storeFile but is missing ${missing.joinToString()} - assembleRelease will not sign (RELEASING.md Part 1).")
+    }
+    if (!file(releaseStoreFile!!).exists()) {
+        logger.warn("RideVibe: release keystore '$releaseStoreFile' does not exist yet - assembleRelease will fail at packaging until it is generated (RELEASING.md Part 1).")
+    }
+}
 
 android {
     namespace = "com.ridevibe.app"
@@ -53,11 +70,17 @@ android {
         }
     }
 
+    lint {
+        abortOnError = true
+        checkDependencies = true
+        baseline = file("lint-baseline.xml")
+    }
+
     buildFeatures {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
+        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
 
     compileOptions {
@@ -72,6 +95,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 
             if (hasReleaseKeystore) {
@@ -111,11 +135,14 @@ dependencies {
     implementation(project(":feature-seatmap"))
     implementation(project(":feature-checkout"))
     implementation(project(":feature-ticket"))
+    implementation(project(":feature-admin"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.core.splashscreen)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -134,14 +161,10 @@ dependencies {
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.crashlytics)
 
-    // QR ticket scanner (bottom-nav Scan tab)
-    implementation(libs.camerax.core)
-    implementation(libs.camerax.camera2)
-    implementation(libs.camerax.lifecycle)
-    implementation(libs.camerax.view)
-    implementation(libs.mlkit.barcode.scanning)
-
     implementation(libs.hilt.android)
     implementation(libs.hilt.navigation.compose)
     ksp(libs.hilt.compiler)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

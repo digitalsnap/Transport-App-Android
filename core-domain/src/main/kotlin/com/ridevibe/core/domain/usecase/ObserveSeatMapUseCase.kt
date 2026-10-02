@@ -1,6 +1,7 @@
 package com.ridevibe.core.domain.usecase
 
 import com.ridevibe.core.domain.model.Seat
+import com.ridevibe.core.domain.model.SeatStatus
 import com.ridevibe.core.domain.model.SeatStatusEvent
 import com.ridevibe.core.domain.repository.SeatRepository
 import kotlinx.coroutines.flow.Flow
@@ -14,7 +15,7 @@ import javax.inject.Inject
 class ObserveSeatMapUseCase @Inject constructor(
     private val seatRepository: SeatRepository,
 ) {
-    suspend fun getInitialSeatMap(tripId: String): List<Seat> =
+    suspend fun getInitialSeatMap(tripId: String): Result<List<Seat>> =
         seatRepository.getSeatMap(tripId)
 
     fun observeEvents(tripId: String): Flow<SeatStatusEvent> =
@@ -24,7 +25,18 @@ class ObserveSeatMapUseCase @Inject constructor(
 fun applySeatEvent(seats: List<Seat>, event: SeatStatusEvent): List<Seat> =
     seats.map { seat ->
         if (seat.id == event.seatId) {
-            seat.copy(status = event.status, lockedByUserId = event.lockedByUserId)
+            // A hold expiry only makes sense while the seat is held; AVAILABLE
+            // and OCCUPIED must drop it so the countdown never shows for a
+            // seat nobody is holding.
+            val holdExpiry = when (event.status) {
+                SeatStatus.LOCKED, SeatStatus.SELECTED -> event.lockExpiresAtEpochMillis
+                SeatStatus.AVAILABLE, SeatStatus.OCCUPIED -> null
+            }
+            seat.copy(
+                status = event.status,
+                lockedByUserId = event.lockedByUserId,
+                lockExpiresAtEpochMillis = holdExpiry,
+            )
         } else {
             seat
         }
